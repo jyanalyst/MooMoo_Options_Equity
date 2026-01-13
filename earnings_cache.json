@@ -1,0 +1,202 @@
+{
+  "INTC": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:20:29.918402"
+  },
+  "PLTR": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:20:47.887702"
+  },
+  "HOOD": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:21:05.893398"
+  },
+  "SOFI": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:21:23.894540"
+  },
+  "PATH": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:21:41.895489"
+  },
+  "RBLX": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:21:59.896035"
+  },
+  "GM": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:22:17.901948"
+  },
+  "AAL": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:22:35.899523"
+  },
+  "DAL": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:22:53.898741"
+  },
+  "UAL": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:23:11.905032"
+  },
+  "CCL": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:23:29.908178"
+  },
+  "RIVN": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:23:47.906590"
+  },
+  "C": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:24:05.917315"
+  },
+  "WFC": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:24:23.917162"
+  },
+  "BAC": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:24:41.912842"
+  },
+  "SCHW": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:24:59.920701"
+  },
+  "FCX": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:25:17.919048"
+  },
+  "PFE": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:25:35.917055"
+  },
+  "UBER": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:25:53.921726"
+  },
+  "LYFT": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:26:11.918460"
+  },
+  "PYPL": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:26:29.923374"
+  },
+  "XYZ": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:26:47.924065"
+  },
+  "ABNB": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:27:05.923769"
+  },
+  "SHOP": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:27:23.927631"
+  },
+  "DDOG": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:27:41.927976"
+  },
+  "NET": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:27:59.937568"
+  },
+  "DIS": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:28:17.941915"
+  },
+  "SBUX": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:28:35.931595"
+  },
+  "NKE": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:28:53.938106"
+  },
+  "TGT": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:29:11.934726"
+  },
+  "MSTR": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:29:29.939087"
+  },
+  "GME": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:29:48.167138"
+  },
+  "MARA": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:30:08.942376"
+  },
+  "RIOT": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:30:29.947909"
+  },
+  "CLSK": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:30:50.947920"
+  },
+  "UPST": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:31:11.951006"
+  },
+  "FCEL": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:31:32.953287"
+  },
+  "IONQ": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:31:53.956014"
+  },
+  "SMCI": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:32:14.959160"
+  },
+  "SNAP": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:01.622081"
+  },
+  "RCL": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:01.710103"
+  },
+  "NIO": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:01.734258"
+  },
+  "LCID": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:01.764574"
+  },
+  "CLF": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:01.814849"
+  },
+  "AMD": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:01.853577"
+  },
+  "CRWD": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:01.919767"
+  },
+  "ZS": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:01.955358"
+  },
+  "MDB": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:02.011645"
+  },
+  "SNOW": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:02.066915"
+  },
+  "COIN": {
+    "next_earnings": null,
+    "cached_at": "2026-01-14T00:41:02.121383"
+  }
+}

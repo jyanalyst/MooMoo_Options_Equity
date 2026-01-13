@@ -1,0 +1,302 @@
+{
+  "INTC": {
+    "iv_low": 0.3386809263455564,
+    "iv_high": 1.0493677374846142,
+    "cached_at": "2026-01-14T00:20:32.893917",
+    "method": "historical_volatility_proxy"
+  },
+  "PLTR": {
+    "iv_low": 0.2864641415844873,
+    "iv_high": 1.1385771654381167,
+    "cached_at": "2026-01-14T00:20:50.973933",
+    "method": "historical_volatility_proxy"
+  },
+  "HOOD": {
+    "iv_low": 0.3926473754808245,
+    "iv_high": 1.2298153969258356,
+    "cached_at": "2026-01-14T00:21:09.003442",
+    "method": "historical_volatility_proxy"
+  },
+  "SOFI": {
+    "iv_low": 0.354795540888707,
+    "iv_high": 1.1284606333650107,
+    "cached_at": "2026-01-14T00:21:26.938279",
+    "method": "historical_volatility_proxy"
+  },
+  "PATH": {
+    "iv_low": 0.2444363915437705,
+    "iv_high": 1.0229025403515155,
+    "cached_at": "2026-01-14T00:21:44.958008",
+    "method": "historical_volatility_proxy"
+  },
+  "RBLX": {
+    "iv_low": 0.2519017074149776,
+    "iv_high": 0.7494125228820815,
+    "cached_at": "2026-01-14T00:22:02.979760",
+    "method": "historical_volatility_proxy"
+  },
+  "GM": {
+    "iv_low": 0.13239444632316388,
+    "iv_high": 0.5736920800743792,
+    "cached_at": "2026-01-14T00:22:20.965768",
+    "method": "historical_volatility_proxy"
+  },
+  "AAL": {
+    "iv_low": 0.2361649285526077,
+    "iv_high": 1.1086433768525452,
+    "cached_at": "2026-01-14T00:22:38.969092",
+    "method": "historical_volatility_proxy"
+  },
+  "DAL": {
+    "iv_low": 0.19330281105106925,
+    "iv_high": 1.0749478840266837,
+    "cached_at": "2026-01-14T00:22:56.981841",
+    "method": "historical_volatility_proxy"
+  },
+  "UAL": {
+    "iv_low": 0.21202869939429206,
+    "iv_high": 1.2629006969228602,
+    "cached_at": "2026-01-14T00:23:14.993139",
+    "method": "historical_volatility_proxy"
+  },
+  "CCL": {
+    "iv_low": 0.2384324283290195,
+    "iv_high": 0.9860258525327642,
+    "cached_at": "2026-01-14T00:23:32.955816",
+    "method": "historical_volatility_proxy"
+  },
+  "RIVN": {
+    "iv_low": 0.3216174061090608,
+    "iv_high": 1.0365567410510512,
+    "cached_at": "2026-01-14T00:23:50.968140",
+    "method": "historical_volatility_proxy"
+  },
+  "C": {
+    "iv_low": 0.15671690902485114,
+    "iv_high": 0.7169724673347799,
+    "cached_at": "2026-01-14T00:24:09.057455",
+    "method": "historical_volatility_proxy"
+  },
+  "WFC": {
+    "iv_low": 0.144807506932895,
+    "iv_high": 0.5908523896570436,
+    "cached_at": "2026-01-14T00:24:26.995741",
+    "method": "historical_volatility_proxy"
+  },
+  "BAC": {
+    "iv_low": 0.12862127663963055,
+    "iv_high": 0.6432890239354945,
+    "cached_at": "2026-01-14T00:24:44.980000",
+    "method": "historical_volatility_proxy"
+  },
+  "SCHW": {
+    "iv_low": 0.10775393339655519,
+    "iv_high": 0.5033375017703318,
+    "cached_at": "2026-01-14T00:25:02.958723",
+    "method": "historical_volatility_proxy"
+  },
+  "FCX": {
+    "iv_low": 0.21198896736531822,
+    "iv_high": 1.0274954603790147,
+    "cached_at": "2026-01-14T00:25:20.971486",
+    "method": "historical_volatility_proxy"
+  },
+  "PFE": {
+    "iv_low": 0.13134988494203684,
+    "iv_high": 0.41748656482149216,
+    "cached_at": "2026-01-14T00:25:38.955763",
+    "method": "historical_volatility_proxy"
+  },
+  "UBER": {
+    "iv_low": 0.21120493927207057,
+    "iv_high": 0.6407534532487899,
+    "cached_at": "2026-01-14T00:25:56.992018",
+    "method": "historical_volatility_proxy"
+  },
+  "LYFT": {
+    "iv_low": 0.2529356801415507,
+    "iv_high": 0.970257590834003,
+    "cached_at": "2026-01-14T00:26:14.976027",
+    "method": "historical_volatility_proxy"
+  },
+  "PYPL": {
+    "iv_low": 0.1553701797819893,
+    "iv_high": 0.6602658416804712,
+    "cached_at": "2026-01-14T00:26:32.985465",
+    "method": "historical_volatility_proxy"
+  },
+  "XYZ": {
+    "iv_low": 0.187800489838869,
+    "iv_high": 1.0521185313123977,
+    "cached_at": "2026-01-14T00:26:50.996960",
+    "method": "historical_volatility_proxy"
+  },
+  "ABNB": {
+    "iv_low": 0.16941519505519548,
+    "iv_high": 0.7167648505331389,
+    "cached_at": "2026-01-14T00:27:09.014898",
+    "method": "historical_volatility_proxy"
+  },
+  "SHOP": {
+    "iv_low": 0.2552300290104573,
+    "iv_high": 1.1566775269360607,
+    "cached_at": "2026-01-14T00:27:27.014071",
+    "method": "historical_volatility_proxy"
+  },
+  "DDOG": {
+    "iv_low": 0.2066271490054484,
+    "iv_high": 0.8998496482047595,
+    "cached_at": "2026-01-14T00:27:45.023492",
+    "method": "historical_volatility_proxy"
+  },
+  "NET": {
+    "iv_low": 0.21403974623190905,
+    "iv_high": 0.9068557111989103,
+    "cached_at": "2026-01-14T00:28:03.004192",
+    "method": "historical_volatility_proxy"
+  },
+  "DIS": {
+    "iv_low": 0.11449683786435048,
+    "iv_high": 0.6762755972007831,
+    "cached_at": "2026-01-14T00:28:21.007190",
+    "method": "historical_volatility_proxy"
+  },
+  "SBUX": {
+    "iv_low": 0.16316831619045605,
+    "iv_high": 0.714403726645263,
+    "cached_at": "2026-01-14T00:28:39.011845",
+    "method": "historical_volatility_proxy"
+  },
+  "NKE": {
+    "iv_low": 0.1619238788248625,
+    "iv_high": 0.8291970512233914,
+    "cached_at": "2026-01-14T00:28:56.999357",
+    "method": "historical_volatility_proxy"
+  },
+  "TGT": {
+    "iv_low": 0.17094231504537674,
+    "iv_high": 0.6771127441199467,
+    "cached_at": "2026-01-14T00:29:15.024058",
+    "method": "historical_volatility_proxy"
+  },
+  "MSTR": {
+    "iv_low": 0.3253270919234568,
+    "iv_high": 1.3696828331009434,
+    "cached_at": "2026-01-14T00:29:33.024756",
+    "method": "historical_volatility_proxy"
+  },
+  "GME": {
+    "iv_low": 0.18736276542415098,
+    "iv_high": 1.2039667267952505,
+    "cached_at": "2026-01-14T00:29:50.988848",
+    "method": "historical_volatility_proxy"
+  },
+  "MARA": {
+    "iv_low": 0.38589929439889437,
+    "iv_high": 1.19318346909679,
+    "cached_at": "2026-01-14T00:30:11.994895",
+    "method": "historical_volatility_proxy"
+  },
+  "RIOT": {
+    "iv_low": 0.508316432972452,
+    "iv_high": 1.027632526711393,
+    "cached_at": "2026-01-14T00:30:33.013081",
+    "method": "historical_volatility_proxy"
+  },
+  "CLSK": {
+    "iv_low": 0.3817668883644148,
+    "iv_high": 1.2511708793304732,
+    "cached_at": "2026-01-14T00:30:54.014031",
+    "method": "historical_volatility_proxy"
+  },
+  "UPST": {
+    "iv_low": 0.4131189224923493,
+    "iv_high": 1.3366159487231868,
+    "cached_at": "2026-01-14T00:31:15.018186",
+    "method": "historical_volatility_proxy"
+  },
+  "FCEL": {
+    "iv_low": 0.4378158089502546,
+    "iv_high": 1.6797445764777832,
+    "cached_at": "2026-01-14T00:31:36.000121",
+    "method": "historical_volatility_proxy"
+  },
+  "IONQ": {
+    "iv_low": 0.5558061052748744,
+    "iv_high": 1.4743792341994213,
+    "cached_at": "2026-01-14T00:31:57.019516",
+    "method": "historical_volatility_proxy"
+  },
+  "SMCI": {
+    "iv_low": 0.32635566335339206,
+    "iv_high": 1.6259232957199354,
+    "cached_at": "2026-01-14T00:32:18.003593",
+    "method": "historical_volatility_proxy"
+  },
+  "SNAP": {
+    "iv_low": 0.18019186534295611,
+    "iv_high": 0.42216121390975325,
+    "cached_at": "2026-01-14T00:41:01.625893",
+    "method": "historical_volatility_proxy"
+  },
+  "RCL": {
+    "iv_low": 0.18992800322519354,
+    "iv_high": 0.4735105558326597,
+    "cached_at": "2026-01-14T00:41:01.713648",
+    "method": "historical_volatility_proxy"
+  },
+  "NIO": {
+    "iv_low": 0.20556974959257063,
+    "iv_high": 0.4018158585955113,
+    "cached_at": "2026-01-14T00:41:01.737547",
+    "method": "historical_volatility_proxy"
+  },
+  "LCID": {
+    "iv_low": 0.205908132062534,
+    "iv_high": 0.4026317517467431,
+    "cached_at": "2026-01-14T00:41:01.768083",
+    "method": "historical_volatility_proxy"
+  },
+  "CLF": {
+    "iv_low": 0.22214897424298025,
+    "iv_high": 0.42181398867805986,
+    "cached_at": "2026-01-14T00:41:01.818524",
+    "method": "historical_volatility_proxy"
+  },
+  "AMD": {
+    "iv_low": 0.20899772166976144,
+    "iv_high": 0.41309802659566597,
+    "cached_at": "2026-01-14T00:41:01.857009",
+    "method": "historical_volatility_proxy"
+  },
+  "CRWD": {
+    "iv_low": 0.20603974301018468,
+    "iv_high": 0.39155546375568717,
+    "cached_at": "2026-01-14T00:41:01.923322",
+    "method": "historical_volatility_proxy"
+  },
+  "ZS": {
+    "iv_low": 0.2193658302566576,
+    "iv_high": 0.4192105417387164,
+    "cached_at": "2026-01-14T00:41:01.959228",
+    "method": "historical_volatility_proxy"
+  },
+  "MDB": {
+    "iv_low": 0.2176258586357622,
+    "iv_high": 0.4162431174346108,
+    "cached_at": "2026-01-14T00:41:02.015354",
+    "method": "historical_volatility_proxy"
+  },
+  "SNOW": {
+    "iv_low": 0.2237642067725873,
+    "iv_high": 0.3894542124741337,
+    "cached_at": "2026-01-14T00:41:02.070410",
+    "method": "historical_volatility_proxy"
+  },
+  "COIN": {
+    "iv_low": 0.24445173592424485,
+    "iv_high": 0.4455053713307778,
+    "cached_at": "2026-01-14T00:41:02.124844",
+    "method": "historical_volatility_proxy"
+  }
+}
