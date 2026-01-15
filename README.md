@@ -60,6 +60,25 @@ python main.py wheel --quiet
 python main.py both --no-csv
 ```
 
+## Refreshing Stock Universe (Every 2 Weeks)
+
+The stock universe should be refreshed bi-weekly to ensure you're trading current quality names:
+
+```bash
+# Run universe builder to refresh fundamental screening
+python universe_builder.py
+
+# Review changes (optional)
+git diff universe.py
+
+# Test with wheel scanner
+python main.py wheel --tier 1
+```
+
+**Recommended schedule:** Every other Sunday during weekly review
+**What it does:** Screens 300+ stocks, scores by fundamental quality, selects top 20 per tier
+**Backup:** Automatically creates timestamped backup before overwriting
+
 ## Output
 
 ### Terminal Display
