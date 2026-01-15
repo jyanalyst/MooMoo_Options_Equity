@@ -537,7 +537,7 @@ def generate_universe_content(tiers: Tuple[List[str], List[str], List[str]],
                 'company': row.get('Company', 'Unknown Company'),
                 'sector': row.get('Sector', 'Unknown Sector'),
                 'score': row.get('Quality_Score', 0.0),
-                'earnings': row.get('Earnings Date', None)  # ← ADD THIS
+                'earnings': row.get('Earnings Date', None)  # Fixed column name
             }
 
     # Create tier content with real company info and scores
@@ -818,6 +818,7 @@ def main():
         print("\n[DEBUG] Upcoming earnings:")
         earnings_df = df[['Ticker', 'Earnings Date']].copy()
         earnings_df = earnings_df[earnings_df['Earnings Date'].notna()]
+        earnings_df = earnings_df[earnings_df['Earnings Date'] != '-']
         if len(earnings_df) > 0:
             print(earnings_df.to_string(index=False))
         else:
