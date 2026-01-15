@@ -17,7 +17,7 @@ import pandas as pd
 import numpy as np
 
 try:
-    from finvizfinance.screener.overview import Overview
+    from finvizfinance.screener.custom import Custom
 except ImportError:
     print("❌ ERROR: finvizfinance not installed. Run: pip install finvizfinance")
     exit(1)
@@ -172,7 +172,7 @@ Examples:
 # DATA FETCHING FUNCTIONS
 # =============================================================================
 
-def fetch_with_retry(screener: Overview, max_retries: int = 3) -> pd.DataFrame:
+def fetch_with_retry(screener, columns=None, max_retries: int = 3) -> pd.DataFrame:
     """
     Fetch data from finviz with exponential backoff retry.
 
@@ -185,7 +185,10 @@ def fetch_with_retry(screener: Overview, max_retries: int = 3) -> pd.DataFrame:
     """
     for attempt in range(max_retries):
         try:
-            df = screener.screener_view(verbose=0)
+            if columns:
+                df = screener.screener_view(verbose=0, columns=columns)
+            else:
+                df = screener.screener_view(verbose=0)
             return df
         except Exception as e:
             wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
@@ -201,23 +204,47 @@ def fetch_with_retry(screener: Overview, max_retries: int = 3) -> pd.DataFrame:
 
 def fetch_stocks_from_finviz() -> pd.DataFrame:
     """
-    Fetch stocks from Finviz using predefined filters.
+    Fetch stocks from Finviz using predefined filters and custom columns.
 
     Returns:
-        DataFrame with screened stocks
+        DataFrame with screened stocks including financial metrics
     """
     print("[Step 1/7] Fetching stocks from Finviz...")
 
-    screener = Overview()
+    screener = Custom()
     screener.set_filter(filters_dict=FINVIZ_FILTERS)
 
-    df = fetch_with_retry(screener)
+    # Explicitly request financial columns
+    # Based on finvizfinance constants, these are the key financial metrics
+    columns = [
+        0,   # No.
+        1,   # Ticker
+        2,   # Company
+        3,   # Sector
+        4,   # Industry
+        6,   # Market Cap
+        7,   # P/E
+        33,  # Return on Equity (ROE)
+        35,  # Current Ratio
+        38,  # Total Debt/Equity
+        39,  # Gross Margin
+        40,  # Operating Margin
+        63,  # Average Volume
+        65,  # Price
+    ]
+
+    df = fetch_with_retry(screener, columns=columns)
     print(f"Stocks fetched from Finviz: {len(df)}")
 
     # Debug: Show applied filters
     print("Applied filters:")
     for key, value in FINVIZ_FILTERS.items():
         print(f"  ✓ {key}: {value}")
+
+    # Debug: Show fetched columns
+    print("\nFetched columns:")
+    for col in df.columns:
+        print(f"  • {col}")
 
     return df
 
@@ -244,8 +271,8 @@ def apply_post_screening_filters(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # Clean numeric columns - properly handle percentages
-    numeric_cols = ['Price', 'Avg Volume', 'Market Cap', 'P/E']
-    percentage_cols = ['Operating Margin', 'ROE', 'Current Ratio', 'Debt/Eq', 'Gross Margin']
+    numeric_cols = ['Price', 'Average Volume', 'Market Cap', 'P/E']
+    percentage_cols = ['Operating Margin', 'Return on Equity', 'Current Ratio', 'Total Debt/Equity', 'Gross Margin']
 
     for col in numeric_cols:
         if col in df.columns:
@@ -287,62 +314,87 @@ def apply_post_screening_filters(df: pd.DataFrame) -> pd.DataFrame:
 # QUALITY SCORING FUNCTIONS
 # =============================================================================
 
-def calculate_quality_score(row) -> float:
+def calculate_quality_scores_percentile(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Calculate quality score (0-100) for ranking stocks.
+    Calculate quality scores using percentile ranking within the dataset.
+    This automatically creates proper score distribution regardless of cohort size.
 
-    Components:
-    - Operating Margin (30%): Higher = better profitability
-    - ROE (25%): Higher = better capital efficiency
-    - Current Ratio (15%): Higher = better liquidity
-    - Debt/Equity (10%): Lower = better (inverse score)
-    - Avg Volume percentile (20%): Will be added separately
+    Stocks are ranked relative to each other, not against absolute thresholds.
+    This provides differentiation even when all stocks are high quality.
 
     Args:
-        row: DataFrame row
+        df: DataFrame with financial metrics
 
     Returns:
-        Quality score (0-100)
+        DataFrame with quality scores added
     """
-    score = 0
+    df = df.copy()
 
-    # Operating Margin (0-30 points)
-    op_margin = row.get('Operating Margin', 0)
-    if pd.notna(op_margin) and op_margin > 0:
-        score += min((op_margin / 50) * 30, 30)  # Cap at 30 points
+    # Operating Margin: 0-30 points based on percentile rank
+    # Finviz returns this as 'Oper M' (abbreviated)
+    if 'Oper M' in df.columns:
+        df['OM_Score'] = df['Oper M'].rank(pct=True, na_option='bottom') * 30
+    else:
+        print("  ⚠️  WARNING: 'Oper M' column not found")
+        df['OM_Score'] = 0
 
-    # ROE (0-25 points)
-    roe = row.get('ROE', 0)
-    if pd.notna(roe) and roe > 0:
-        score += min((roe / 40) * 25, 25)  # Cap at 25 points
+    # ROE: 0-25 points based on percentile rank
+    # Finviz returns this as 'ROE' (matches!)
+    if 'ROE' in df.columns:
+        df['ROE_Score'] = df['ROE'].rank(pct=True, na_option='bottom') * 25
+    else:
+        print("  ⚠️  WARNING: 'ROE' column not found")
+        df['ROE_Score'] = 0
 
-    # Current Ratio (0-15 points)
-    curr_ratio = row.get('Current Ratio', 0)
-    if pd.notna(curr_ratio) and curr_ratio > 0:
-        score += min((curr_ratio / 3) * 15, 15)  # Cap at 15 points
+    # Current Ratio: 0-15 points based on percentile rank
+    # Finviz returns this as 'Curr R' (abbreviated)
+    if 'Curr R' in df.columns:
+        df['CR_Score'] = df['Curr R'].rank(pct=True, na_option='bottom') * 15
+    else:
+        print("  ⚠️  WARNING: 'Curr R' column not found")
+        df['CR_Score'] = 0
 
-    # Debt/Equity - INVERSE (0-10 points, lower is better)
-    debt_eq = row.get('Debt/Eq', 1.0)
-    if pd.notna(debt_eq):
-        score += max(10 - (debt_eq * 10), 0)  # Lower debt = higher score
+    # Debt/Equity: 0-10 points (INVERSE percentile - lower debt = higher score)
+    # Finviz returns this as 'Debt/Eq' (abbreviated)
+    if 'Debt/Eq' in df.columns:
+        df['DE_Score'] = (1 - df['Debt/Eq'].rank(pct=True, na_option='top')) * 10
+    else:
+        print("  ⚠️  WARNING: 'Debt/Eq' column not found")
+        df['DE_Score'] = 0
 
-    return round(score, 2)
+    # Gross Margin: Bonus 0-5 points based on percentile rank
+    # Finviz returns this as 'Gross M' (abbreviated)
+    if 'Gross M' in df.columns:
+        df['GM_Score'] = df['Gross M'].rank(pct=True, na_option='bottom') * 5
+    else:
+        print("  ⚠️  WARNING: 'Gross M' column not found")
+        df['GM_Score'] = 0
+
+    # Sum all components (max 85 points before volume)
+    df['Quality_Score'] = (
+        df['OM_Score'].fillna(0) +
+        df['ROE_Score'].fillna(0) +
+        df['CR_Score'].fillna(0) +
+        df['DE_Score'].fillna(0) +
+        df['GM_Score'].fillna(0)
+    )
+
+    return df
 
 
 def add_volume_percentile(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate volume percentile rank and add to quality score.
-
-    Args:
-        df: DataFrame with quality scores
-
-    Returns:
-        DataFrame with volume percentile added to quality score
+    Volume gets 15 points (reduced from 20 to make room for gross margin).
     """
+    # Finviz returns this as 'Avg Volume' (abbreviated)
     if 'Avg Volume' in df.columns and len(df) > 0:
         df = df.copy()
-        df['Volume_Percentile'] = df['Avg Volume'].rank(pct=True) * 20  # 0-20 points
-        df['Quality_Score'] = df['Quality_Score'] + df['Volume_Percentile']
+        df['Volume_Score'] = df['Avg Volume'].rank(pct=True, na_option='bottom') * 15
+        df['Quality_Score'] = df['Quality_Score'] + df['Volume_Score']
+    else:
+        print("  ⚠️  WARNING: 'Avg Volume' column not found")
+        df['Volume_Score'] = 0
 
     return df
 
@@ -499,12 +551,15 @@ Fundamental screening criteria applied:
 - Avg Volume >1M shares/day
 - Excluded: Biotech stocks
 
-Quality scoring formula:
-- Operating Margin: 30%
-- ROE: 25%
-- Volume Rank: 20%
-- Current Ratio: 15%
-- Debt/Equity (inverse): 10%
+Quality scoring method: PERCENTILE-BASED RANKING
+Stocks ranked relative to each other within filtered cohort:
+- Operating Margin: 30% weight (percentile rank)
+- ROE: 25% weight (percentile rank)
+- Volume: 15% weight (percentile rank)
+- Current Ratio: 15% weight (percentile rank)
+- Debt/Equity: 10% weight (inverse percentile - lower is better)
+- Gross Margin: 5% weight (percentile rank bonus)
+Total possible: 100 points
 
 Stocks screened: {stats['screened']}
 Quality stocks found: {stats['passed']}
@@ -675,14 +730,18 @@ def check_minimum_results(df: pd.DataFrame):
     Args:
         df: Filtered results
     """
-    if len(df) < 60:  # Need at least 60 for 20 per tier
+    if len(df) < 15:  # Reduced from 60 - need at least 5 per tier
         print(f"\n⚠️  WARNING: Only {len(df)} stocks passed screening")
-        print("   Expected at least 60 stocks for 3 tiers")
+        print("   Expected at least 15 stocks minimum (5 per tier)")
         print("   Consider relaxing filters or check if finviz is accessible")
         response = input("\nContinue anyway? (y/n): ")
         if response.lower() != 'y':
             print("Aborted. No changes made to universe.py")
             exit(0)
+    elif len(df) < 60:
+        print(f"\n⚠️  NOTE: {len(df)} stocks passed screening (target: 60)")
+        print("   This may result in fewer than 20 stocks per tier")
+        print("   Consider relaxing filters in FINVIZ_FILTERS if more stocks needed")
 
 
 # =============================================================================
@@ -704,29 +763,45 @@ def main():
 
     check_minimum_results(df)
 
-    # Step 3: Calculate quality scores
-    print("\n[Step 3/7] Calculating quality scores...")
-    print("  Operating Margin (30%)")
-    print("  ROE (25%)")
-    print("  Current Ratio (15%)")
-    print("  Debt/Equity inverse (10%)")
-    print("  Volume percentile (20%)")
+    # Add numeric market cap column for percentile calculations
+    df['Market Cap Numeric'] = df['Market Cap'].apply(lambda x: float(x.replace('B', '')) * 1000 if isinstance(x, str) and 'B' in x else (float(x.replace('M', '')) if isinstance(x, str) and 'M' in x else float(x)))
 
-    df['Quality_Score'] = df.apply(calculate_quality_score, axis=1)
+    # Step 3: Calculate quality scores using percentile ranking
+    print("\n[Step 3/7] Calculating quality scores (percentile-based)...")
+    print("  Operating Margin (30% weight)")
+    print("  ROE (25% weight)")
+    print("  Current Ratio (15% weight)")
+    print("  Volume (15% weight)")
+    print("  Debt/Equity inverse (10% weight)")
+    print("  Gross Margin bonus (5% weight)")
+    print("\n  Note: Stocks ranked relative to each other, not absolute thresholds")
+
+    # Calculate scores based on percentile rankings
+    df = calculate_quality_scores_percentile(df)
     df = add_volume_percentile(df)
 
-    # Show score distribution
-    score_bins = pd.cut(df['Quality_Score'], bins=[0, 20, 40, 60, 80, 100])
+    # Debug: Show sample scores and underlying metrics
+    if len(df) >= 3:
+        print("\n[DEBUG] Sample stocks with financial metrics:")
+        # Use abbreviated column names that finviz actually returns
+        debug_cols = ['Ticker', 'Oper M', 'ROE', 'Curr R', 'Debt/Eq', 'Quality_Score']
+        available_cols = [col for col in debug_cols if col in df.columns]
+        print(df[available_cols].head(3).to_string(index=False))
+
+    # Show score distribution with more granular bins
+    score_bins = pd.cut(df['Quality_Score'], bins=[0, 40, 50, 60, 70, 80, 90, 100])
     score_counts = df.groupby(score_bins).size()
     print("\nScore distribution:")
     for bin_range, count in score_counts.items():
         label = f"{bin_range.left:.0f}-{bin_range.right:.0f}"
         desc_dict = {
-            "0-20": "poor",
-            "20-40": "below average",
-            "40-60": "average",
-            "60-80": "good",
-            "80-100": "excellent"
+            "0-40": "below average",
+            "40-50": "average",
+            "50-60": "above average",
+            "60-70": "good",
+            "70-80": "very good",
+            "80-90": "excellent",
+            "90-100": "elite"
         }
         desc = desc_dict.get(label, "")
         print(f"  {label}: {count} stocks ({desc})")
