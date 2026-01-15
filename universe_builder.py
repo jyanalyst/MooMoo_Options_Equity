@@ -100,9 +100,25 @@ def print_summary(df: pd.DataFrame, tiers: Tuple[List[str], List[str], List[str]
     print("  python main.py wheel --tier 1")
 
 
-def format_ticker_line(ticker: str, name: str, sector: str, score: float) -> str:
-    """Format a ticker line for the universe lists."""
-    return f'    "{ticker}",  # {name} - {sector} | Score: {score:.1f}'
+def format_ticker_line(ticker: str, name: str, sector: str, score: float, earnings: str = None) -> str:
+    """Format a single ticker line with company info, score, and earnings date."""
+    company_short = name[:30] if len(name) > 30 else name
+
+    # Format earnings date if available
+    earnings_str = ""
+    if earnings and earnings != '-':
+        # Parse finviz earnings format (could be "Feb 18 AMC" or "2026-02-18")
+        try:
+            # Clean up finviz format - take first two parts (month day)
+            earnings_parts = str(earnings).split()
+            if len(earnings_parts) >= 2:
+                earnings_clean = f"{earnings_parts[0]} {earnings_parts[1]}"
+                earnings_str = f" | Earnings: {earnings_clean}"
+        except:
+            if earnings and str(earnings).strip():
+                earnings_str = f" | Earnings: {str(earnings).strip()}"
+
+    return f'    "{ticker}",  # {company_short} - {sector} | Score: {score:.1f}{earnings_str}'
 
 
 def parse_arguments():
@@ -231,6 +247,7 @@ def fetch_stocks_from_finviz() -> pd.DataFrame:
         40,  # Operating Margin
         63,  # Average Volume
         65,  # Price
+        68,  # Earnings Date
     ]
 
     df = fetch_with_retry(screener, columns=columns)
@@ -519,7 +536,8 @@ def generate_universe_content(tiers: Tuple[List[str], List[str], List[str]],
             company_lookup[ticker] = {
                 'company': row.get('Company', 'Unknown Company'),
                 'sector': row.get('Sector', 'Unknown Sector'),
-                'score': row.get('Quality_Score', 0.0)
+                'score': row.get('Quality_Score', 0.0),
+                'earnings': row.get('Earnings Date', None)  # ← ADD THIS
             }
 
     # Create tier content with real company info and scores
@@ -529,9 +547,16 @@ def generate_universe_content(tiers: Tuple[List[str], List[str], List[str]],
             info = company_lookup.get(ticker, {
                 'company': 'Unknown Company',
                 'sector': 'Unknown Sector',
-                'score': 0.0
+                'score': 0.0,
+                'earnings': None
             })
-            lines.append(format_ticker_line(ticker, info['company'], info['sector'], info['score']))
+            lines.append(format_ticker_line(
+                ticker,
+                info['company'],
+                info['sector'],
+                info['score'],
+                info.get('earnings')  # ← ADD THIS
+            ))
         return '\n'.join(lines)
 
     content = f'''"""
@@ -787,6 +812,16 @@ def main():
         debug_cols = ['Ticker', 'Oper M', 'ROE', 'Curr R', 'Debt/Eq', 'Quality_Score']
         available_cols = [col for col in debug_cols if col in df.columns]
         print(df[available_cols].head(3).to_string(index=False))
+
+    # Debug: Show earnings dates if available
+    if 'Earnings Date' in df.columns:
+        print("\n[DEBUG] Upcoming earnings:")
+        earnings_df = df[['Ticker', 'Earnings Date']].copy()
+        earnings_df = earnings_df[earnings_df['Earnings Date'].notna()]
+        if len(earnings_df) > 0:
+            print(earnings_df.to_string(index=False))
+        else:
+            print("  No earnings dates found in data")
 
     # Show score distribution with more granular bins
     score_bins = pd.cut(df['Quality_Score'], bins=[0, 40, 50, 60, 70, 80, 90, 100])
