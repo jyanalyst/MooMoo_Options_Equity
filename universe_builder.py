@@ -106,17 +106,28 @@ def format_ticker_line(ticker: str, name: str, sector: str, score: float, earnin
 
     # Format earnings date if available
     earnings_str = ""
-    if earnings and earnings != '-':
-        # Parse finviz earnings format (could be "Feb 18 AMC" or "2026-02-18")
+    if earnings is not None and earnings != '' and str(earnings).lower() not in ['nan', 'none', '-']:
         try:
-            # Clean up finviz format - take first two parts (month day)
-            earnings_parts = str(earnings).split()
-            if len(earnings_parts) >= 2:
-                earnings_clean = f"{earnings_parts[0]} {earnings_parts[1]}"
-                earnings_str = f" | Earnings: {earnings_clean}"
-        except:
-            if earnings and str(earnings).strip():
-                earnings_str = f" | Earnings: {str(earnings).strip()}"
+            earnings_clean = str(earnings).strip()
+
+            # Handle YYYY-MM-DD format from yfinance
+            if len(earnings_clean) == 10 and earnings_clean.count('-') == 2:
+                from datetime import datetime
+                dt = datetime.strptime(earnings_clean, '%Y-%m-%d')
+                earnings_display = dt.strftime('%b %d')  # Convert to "Feb 19"
+            else:
+                # Handle other formats (legacy finviz format)
+                parts = earnings_clean.split()
+                if len(parts) >= 2:
+                    earnings_display = f"{parts[0]} {parts[1]}"
+                else:
+                    earnings_display = earnings_clean
+
+            earnings_str = f" | Earnings: {earnings_display}"
+
+        except Exception as e:
+            # Silently skip malformed dates
+            pass
 
     return f'    "{ticker}",  # {company_short} - {sector} | Score: {score:.1f}{earnings_str}'
 
@@ -253,6 +264,58 @@ def fetch_stocks_from_finviz() -> pd.DataFrame:
     df = fetch_with_retry(screener, columns=columns)
     print(f"Stocks fetched from Finviz: {len(df)}")
 
+    # ═══════════════════════════════════════════════════════════════
+    # DIAGNOSTIC: Earnings Column Investigation
+    # ═══════════════════════════════════════════════════════════════
+    print("\n" + "="*70)
+    print("DIAGNOSTIC: EARNINGS COLUMN ANALYSIS")
+    print("="*70)
+
+    # Show all column names with indices
+    print("\n1. All columns in dataframe:")
+    for i, col in enumerate(df.columns):
+        print(f"   [{i:2d}] '{col}'")
+
+    # Find columns containing 'earn'
+    earnings_candidates = [col for col in df.columns if 'earn' in col.lower()]
+    print(f"\n2. Columns containing 'earn': {earnings_candidates}")
+
+    # If earnings column found, analyze its data
+    if earnings_candidates:
+        for col in earnings_candidates:
+            print(f"\n3. Analyzing column '{col}':")
+            print(f"   Data type: {df[col].dtype}")
+            print(f"   Non-null count: {df[col].notna().sum()}/{len(df)}")
+            print(f"   Unique values: {df[col].nunique()}")
+
+            # Show sample data
+            print(f"\n   Sample values (first 10 rows):")
+            for idx, val in enumerate(df[col].head(10)):
+                ticker = df.iloc[idx]['Ticker'] if 'Ticker' in df.columns else f"Row {idx}"
+                print(f"      {ticker:8s} -> '{val}'")
+
+            # Show non-null samples specifically
+            non_null = df[df[col].notna()]
+            if len(non_null) > 0:
+                print(f"\n   Non-null samples (showing up to 5):")
+                for idx, row in non_null.head(5).iterrows():
+                    ticker = row.get('Ticker', 'Unknown')
+                    earnings = row[col]
+                    print(f"      {ticker:8s} -> '{earnings}'")
+            else:
+                print(f"\n   ⚠️  WARNING: No non-null values found in '{col}'!")
+    else:
+        print("\n⚠️  CRITICAL: No columns containing 'earn' found!")
+        print("   This means earnings data is NOT being fetched.")
+        print("\n   Troubleshooting:")
+        print("   1. Verify column 68 is in the columns list")
+        print("   2. Check if finviz API changed column indices")
+        print("   3. Try using finvizfinance.screener.financial instead")
+
+    print("="*70)
+    print("END DIAGNOSTIC\n")
+    # ═══════════════════════════════════════════════════════════════
+
     # Debug: Show applied filters
     print("Applied filters:")
     for key, value in FINVIZ_FILTERS.items():
@@ -323,6 +386,79 @@ def apply_post_screening_filters(df: pd.DataFrame) -> pd.DataFrame:
 
     final_count = len(df)
     print(f"Quality stocks remaining: {final_count}")
+
+    return df
+
+
+# =============================================================================
+# EARNINGS ENRICHMENT FUNCTIONS
+# =============================================================================
+
+def enrich_with_next_earnings(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Fetch next earnings dates using yfinance.
+
+    Replaces finviz's 'last earnings' with actual 'next earnings'.
+    This is critical for forward-looking earnings safety checks.
+
+    Args:
+        df: DataFrame with stock data
+
+    Returns:
+        DataFrame with 'Next_Earnings' column added
+    """
+    import yfinance as yf
+    from datetime import datetime
+
+    print("\n[Step 2.5/7] Fetching next earnings dates from yfinance...")
+    print("  (This may take 30-60 seconds for 15 stocks)")
+
+    df = df.copy()
+    df['Next_Earnings'] = None
+
+    success_count = 0
+
+    for idx, row in df.iterrows():
+        ticker = row['Ticker']
+        try:
+            # Fetch stock calendar
+            stock = yf.Ticker(ticker)
+            calendar = stock.calendar
+
+            # Extract next earnings date
+            if calendar is not None:
+                if hasattr(calendar, 'get') and 'Earnings Date' in calendar:
+                    earnings_dates = calendar['Earnings Date']
+                elif hasattr(calendar, 'index') and 'Earnings Date' in calendar.index:
+                    earnings_dates = calendar.loc['Earnings Date']
+                else:
+                    earnings_dates = None
+
+                if earnings_dates is not None and len(earnings_dates) > 0:
+                    # First date is next earnings
+                    next_earnings = earnings_dates[0] if hasattr(earnings_dates, '__iter__') else earnings_dates
+
+                    # Convert to string format
+                    if hasattr(next_earnings, 'strftime'):
+                        earnings_str = next_earnings.strftime('%Y-%m-%d')
+                        df.at[idx, 'Next_Earnings'] = earnings_str
+                        print(f"  ✓ {ticker:8s} -> {next_earnings.strftime('%b %d, %Y')}")
+                        success_count += 1
+                    else:
+                        print(f"  ⚠️  {ticker:8s} -> Unexpected format: {next_earnings}")
+                else:
+                    print(f"  ⚠️  {ticker:8s} -> No earnings date found")
+            else:
+                print(f"  ⚠️  {ticker:8s} -> Calendar unavailable")
+
+        except Exception as e:
+            print(f"  ❌ {ticker:8s} -> Error: {str(e)[:50]}")
+
+    print(f"\n  Next earnings fetched: {success_count}/{len(df)} stocks")
+
+    if success_count < len(df) * 0.5:  # If less than 50% success
+        print("\n  ⚠️  WARNING: Many earnings dates failed to fetch")
+        print("     Consider using manual earnings_calendar.py as backup")
 
     return df
 
@@ -533,12 +669,37 @@ def generate_universe_content(tiers: Tuple[List[str], List[str], List[str]],
     for _, row in df.iterrows():
         ticker = row.get('Ticker', '')
         if ticker:
+            # Determine actual earnings column name
+            earnings_col = None
+            for col in df.columns:
+                if 'earn' in col.lower():
+                    earnings_col = col
+                    break
+
+            earnings_value = row.get(earnings_col, None) if earnings_col else None
+
             company_lookup[ticker] = {
                 'company': row.get('Company', 'Unknown Company'),
                 'sector': row.get('Sector', 'Unknown Sector'),
                 'score': row.get('Quality_Score', 0.0),
-                'earnings': row.get('Earnings Date', None)  # Fixed column name
+                'earnings': row.get('Next_Earnings', None)  # Use yfinance next earnings
             }
+
+    # DIAGNOSTIC: Verify earnings in lookup
+    print("\n[DIAGNOSTIC] Company lookup earnings check:")
+    earnings_found = 0
+    for ticker, info in company_lookup.items():
+        if info.get('earnings'):
+            earnings_found += 1
+            print(f"  ✓ {ticker}: {info['earnings']}")
+
+    if earnings_found == 0:
+        print("  ⚠️  WARNING: No earnings found in company_lookup!")
+        print(f"  Sample company_lookup entry:")
+        sample_ticker = list(company_lookup.keys())[0]
+        print(f"    {sample_ticker}: {company_lookup[sample_ticker]}")
+    else:
+        print(f"  Total stocks with earnings: {earnings_found}/{len(company_lookup)}")
 
     # Create tier content with real company info and scores
     def create_tier_list(tickers, tier_num):
@@ -786,6 +947,9 @@ def main():
     df = apply_post_screening_filters(df)
     total_passed = len(df)
 
+    # Step 2.5: Enrich with next earnings from yfinance
+    df = enrich_with_next_earnings(df)
+
     check_minimum_results(df)
 
     # Add numeric market cap column for percentile calculations
@@ -841,6 +1005,46 @@ def main():
         }
         desc = desc_dict.get(label, "")
         print(f"  {label}: {count} stocks ({desc})")
+
+    # ═══════════════════════════════════════════════════════════════
+    # DIAGNOSTIC: Earnings Column in Final DataFrame
+    # ═══════════════════════════════════════════════════════════════
+    print("\n[DIAGNOSTIC] Checking earnings in final dataframe...")
+
+    # Find earnings column
+    earnings_col = None
+    for col in df.columns:
+        if 'earn' in col.lower():
+            earnings_col = col
+            break
+
+    if earnings_col:
+        print(f"✓ Found earnings column: '{earnings_col}'")
+
+        # Show earnings data
+        print("\n[DEBUG] Upcoming earnings:")
+        earnings_display = df[['Ticker', earnings_col]].copy()
+
+        # Filter to non-null, non-empty, non-dash values
+        mask = (
+            earnings_display[earnings_col].notna() &
+            (earnings_display[earnings_col] != '') &
+            (earnings_display[earnings_col] != '-') &
+            (earnings_display[earnings_col].astype(str).str.lower() != 'nan')
+        )
+        earnings_display = earnings_display[mask]
+
+        if len(earnings_display) > 0:
+            print(earnings_display.to_string(index=False))
+            print(f"\nTotal stocks with earnings data: {len(earnings_display)}/{len(df)}")
+        else:
+            print("  ⚠️  WARNING: No valid earnings dates found!")
+            print(f"  All values in '{earnings_col}':")
+            print(df[['Ticker', earnings_col]].to_string(index=False))
+    else:
+        print("❌ CRITICAL: No earnings column found in final dataframe!")
+        print(f"Available columns: {df.columns.tolist()}")
+    # ═══════════════════════════════════════════════════════════════
 
     # Step 4: Assign tiers
     limits = {
