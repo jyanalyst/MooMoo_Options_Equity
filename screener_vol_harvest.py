@@ -231,10 +231,10 @@ class VolHarvestScreener:
             expiration=expiration,
             option_type="PUT",
             delta_min=short_put_delta_min,
-            delta_max=short_put_delta_max,
-            volume_min=self.config['volume_min']
+            delta_max=short_put_delta_max
+            # Removed: volume_min=self.config['volume_min']
         )
-        
+
         # Get CALL options for short and long legs
         short_calls = self.data_fetcher.get_options_chain(
             ticker=ticker,
@@ -242,7 +242,7 @@ class VolHarvestScreener:
             option_type="CALL",
             delta_min=self.config['short_delta_min'],  # 0.15
             delta_max=self.config['short_delta_max'],  # 0.20
-            volume_min=self.config['volume_min']
+            # Removed: volume_min=self.config['volume_min']
         )
         
         if short_puts is None or short_puts.empty:
@@ -324,21 +324,39 @@ class VolHarvestScreener:
             sp_strike = float(short_put['strike_price'])
             sp_bid = float(short_put.get('bid', 0))
             sp_delta = abs(float(short_put['delta']))
-            
+            sp_volume = int(short_put.get('volume', 0))
+            sp_oi = int(short_put.get('open_interest', 0))
+
             lp_strike = float(long_put['strike_price'])
             lp_ask = float(long_put.get('ask', 0))
-            
+            lp_volume = int(long_put.get('volume', 0))
+            lp_oi = int(long_put.get('open_interest', 0))
+
             sc_strike = float(short_call['strike_price'])
             sc_bid = float(short_call.get('bid', 0))
             sc_delta = abs(float(short_call['delta']))
-            
+            sc_volume = int(short_call.get('volume', 0))
+            sc_oi = int(short_call.get('open_interest', 0))
+
             lc_strike = float(long_call['strike_price'])
             lc_ask = float(long_call.get('ask', 0))
-            
+            lc_volume = int(long_call.get('volume', 0))
+            lc_oi = int(long_call.get('open_interest', 0))
+
+            # Liquidity check: Accept if EITHER volume OR open interest is sufficient
+            sp_liquidity_ok = sp_volume >= self.config.get('volume_min', 50) or sp_oi >= self.config.get('open_interest_min', 500)
+            lp_liquidity_ok = lp_volume >= self.config.get('volume_min', 50) or lp_oi >= self.config.get('open_interest_min', 500)
+            sc_liquidity_ok = sc_volume >= self.config.get('volume_min', 50) or sc_oi >= self.config.get('open_interest_min', 500)
+            lc_liquidity_ok = lc_volume >= self.config.get('volume_min', 50) or lc_oi >= self.config.get('open_interest_min', 500)
+
+            # All legs must have sufficient liquidity
+            if not (sp_liquidity_ok and lp_liquidity_ok and sc_liquidity_ok and lc_liquidity_ok):
+                return None
+
             # Calculate spreads
             put_spread_width = sp_strike - lp_strike
             call_spread_width = lc_strike - sc_strike
-            
+
             # Wing widths should be reasonable
             if put_spread_width < self.config['wing_width_min'] or call_spread_width < self.config['wing_width_min']:
                 return None

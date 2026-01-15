@@ -286,7 +286,8 @@ class IVAnalyzer:
         # Get current IV from options
         current_iv = self.get_current_iv_from_options(ticker, target_expiration)
         if current_iv:
-            result["current_iv"] = round(current_iv * 100, 1)  # Convert to percentage
+            # API returns IV as percentage already, so no need to multiply by 100
+            result["current_iv"] = round(current_iv, 1)
         
         # Get IV range
         iv_range = self.get_iv_range(ticker)
@@ -296,7 +297,9 @@ class IVAnalyzer:
         
         # Calculate IV Rank
         if current_iv:
-            iv_rank = self.calculate_iv_rank(ticker, current_iv)
+            # Convert current_iv from percentage to decimal for rank calculation
+            current_iv_decimal = current_iv / 100.0
+            iv_rank = self.calculate_iv_rank(ticker, current_iv_decimal)
             result["iv_rank"] = iv_rank
         
         # Get HV for comparison

@@ -237,13 +237,14 @@ class WheelScreener:
         delta_min = -self.config['delta_max']  # e.g., -0.30
         delta_max = -self.config['delta_min']  # e.g., -0.20
 
+        # Don't filter by volume here - we want to check both volume AND open interest
         chain = self.data_fetcher.get_options_chain(
             ticker=ticker,
             expiration=expiration,
             option_type="PUT",
             delta_min=delta_min,
-            delta_max=delta_max,
-            volume_min=self.config['volume_min']
+            delta_max=delta_max
+            # Removed: volume_min=self.config['volume_min']
         )
 
         if verbose:
@@ -364,12 +365,16 @@ class WheelScreener:
         cash_required = strike * 100
         return_pct = (premium / strike) * 100 if strike > 0 else 0
 
+        # Liquidity filter: Accept if EITHER volume OR open interest is sufficient
+        volume_ok = volume >= self.config.get('volume_min', 50)
+        oi_ok = oi >= self.config.get('open_interest_min', 500)
+        passes_liquidity = volume_ok or oi_ok
+
         # Relaxed filters for testing - focus on premium rather than spread
         passes_spread = spread_pct <= self.config['bid_ask_spread_max_pct'] or last_price > 0  # Allow if we have last_price
         passes_premium = return_pct >= (self.config['premium_pct_of_strike_min'] * 100)
-        passes_volume = volume >= self.config['volume_min']  # TEMP: Relaxed for testing
 
-        passes_filters = passes_premium and passes_volume  # Focus on premium and volume, relax spread
+        passes_filters = passes_premium and passes_liquidity  # Focus on premium and liquidity (volume OR OI), relax spread
 
         # Quality score for this option
         quality_score = 0
@@ -399,7 +404,7 @@ class WheelScreener:
             'iv': round(iv * 100, 1),
             'passes_spread': passes_spread,
             'passes_premium': passes_premium,
-            'passes_volume': passes_volume,
+            'passes_liquidity': passes_liquidity,
             'passes_filters': passes_filters,
             'quality_score': round(quality_score, 2),
         }

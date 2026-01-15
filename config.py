@@ -30,7 +30,8 @@ WHEEL_CONFIG = {
     "delta_max": 0.30,
     "dte_min": 30,
     "dte_max": 45,
-    "volume_min": 100,  # ADJUSTED: Minimum volume required (was 1000, too strict)
+    "volume_min": 50,  # ADJUSTED: Minimum volume required (reduced for OR logic with OI)
+    "open_interest_min": 500,  # NEW: Alternative liquidity check (Open Interest)
     "bid_ask_spread_max_pct": 0.50,  # TEMPORARILY RELAXED FOR DEBUGGING (50% of mid)
     
     # Premium target

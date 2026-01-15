@@ -298,5 +298,29 @@
     "iv_high": 0.4455053713307778,
     "cached_at": "2026-01-14T00:41:02.124844",
     "method": "historical_volatility_proxy"
+  },
+  "CPRT": {
+    "iv_low": 0.11210026067726118,
+    "iv_high": 0.46785148509302965,
+    "cached_at": "2026-01-16T01:03:28.279201",
+    "method": "historical_volatility_proxy"
+  },
+  "CDE": {
+    "iv_low": 0.2865880378946482,
+    "iv_high": 1.1166448190977472,
+    "cached_at": "2026-01-16T01:03:58.283365",
+    "method": "historical_volatility_proxy"
+  },
+  "CART": {
+    "iv_low": 0.19836962641545663,
+    "iv_high": 0.705863699982908,
+    "cached_at": "2026-01-16T01:04:31.291632",
+    "method": "historical_volatility_proxy"
+  },
+  "AA": {
+    "iv_low": 0.26508926696826585,
+    "iv_high": 0.9755847512654713,
+    "cached_at": "2026-01-16T01:05:01.298773",
+    "method": "historical_volatility_proxy"
   }
 }

@@ -9,7 +9,7 @@ from screener_wheel import WheelScreener
 def test_scanner():
     fetcher = get_data_fetcher(use_mock=False)
     screener = WheelScreener(fetcher, tier=1)
-    screener.universe = ['INTC']  # Just test one stock
+    screener.universe = ['PLTR', 'INTC', 'AMD', 'SOFI']  # Test multiple stocks
 
     print('Testing INTC with full debugging...')
     candidates = screener.screen_candidates(verbose=True)
