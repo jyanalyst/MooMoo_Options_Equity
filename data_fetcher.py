@@ -14,6 +14,7 @@ from typing import Optional, List, Dict, Tuple, Any
 from datetime import datetime, timedelta
 import time
 import pandas as pd
+from functools import lru_cache
 
 # yfinance for stock quotes (free)
 try:
@@ -60,7 +61,7 @@ class HybridDataFetcher:
     def __init__(self, host: str = MOOMOO_HOST, port: int = MOOMOO_PORT):
         """
         Initialize Hybrid data fetcher.
-        
+
         Args:
             host: OpenD host address (for MooMoo options data)
             port: OpenD port number
@@ -70,10 +71,18 @@ class HybridDataFetcher:
         self.quote_ctx = None
         self.moomoo_connected = False
         self.last_request_time = 0
-        
+
+        # Quote caching with 15-minute TTL
+        self._quote_cache: Dict[str, Tuple[Dict, datetime]] = {}
+        self._quote_cache_ttl = timedelta(minutes=15)
+
+        # Options chain caching with 5-minute TTL
+        self._chain_cache: Dict[Tuple[str, str], Tuple[pd.DataFrame, datetime]] = {}
+        self._chain_cache_ttl = timedelta(minutes=5)
+
         if not YFINANCE_AVAILABLE:
             raise RuntimeError("yfinance package not installed - required for stock quotes")
-        
+
         if not MOOMOO_AVAILABLE:
             print("Warning: moomoo-api not available - options data will not work")
     
@@ -121,7 +130,13 @@ class HybridDataFetcher:
             self.quote_ctx.close()
             self.moomoo_connected = False
             print("Disconnected from MooMoo OpenD")
-    
+
+    def clear_cache(self):
+        """Clear all cached data"""
+        self._quote_cache.clear()
+        self._chain_cache.clear()
+        print("Cache cleared")
+
     def _rate_limit(self):
         """Apply rate limiting between MooMoo API calls"""
         elapsed = time.time() - self.last_request_time
@@ -192,42 +207,62 @@ class HybridDataFetcher:
     
     def get_batch_quotes(self, tickers: List[str]) -> Dict[str, Dict]:
         """
-        Get quotes for multiple stocks using yfinance (FREE).
-        
+        Get quotes for multiple stocks using yfinance (FREE) with caching.
+
         Args:
             tickers: List of stock tickers
-            
+
         Returns:
             Dict mapping ticker to quote data
         """
         results = {}
-        
+        now = datetime.now()
+
         # Strip MooMoo prefixes
         clean_tickers = [strip_moomoo_prefix(t) for t in tickers]
-        
-        print(f"   Fetching {len(clean_tickers)} stock quotes via yfinance (FREE)...")
+
+        # Check cache first, collect tickers that need fetching
+        tickers_to_fetch = []
+        for ticker in clean_tickers:
+            if ticker in self._quote_cache:
+                cached_quote, cached_time = self._quote_cache[ticker]
+                if now - cached_time < self._quote_cache_ttl:
+                    results[ticker] = cached_quote
+                    continue
+            tickers_to_fetch.append(ticker)
+
+        if not tickers_to_fetch:
+            print(f"   Using cached quotes for {len(clean_tickers)} stocks")
+            return results
+
+        cached_count = len(clean_tickers) - len(tickers_to_fetch)
+        fetch_msg = f"   Fetching {len(tickers_to_fetch)} stock quotes via yfinance"
+        if cached_count > 0:
+            fetch_msg += f" ({cached_count} from cache)"
+        print(fetch_msg + "...")
         
         # yfinance can batch download
         try:
-            # Download all at once for efficiency
+            # Download all at once for efficiency (only tickers not in cache)
             data = yf.download(
-                clean_tickers, 
-                period="1d", 
+                tickers_to_fetch,
+                period="1d",
                 progress=False,
                 threads=True
             )
             
             if data.empty:
                 print("   Warning: yfinance returned no data, trying individually...")
-                for ticker in clean_tickers:
+                for ticker in tickers_to_fetch:
                     quote = self.get_stock_quote(ticker)
                     if quote:
                         results[ticker] = quote
+                        self._quote_cache[ticker] = (quote, now)
             else:
                 # Process batch results
-                for ticker in clean_tickers:
+                for ticker in tickers_to_fetch:
                     try:
-                        if len(clean_tickers) == 1:
+                        if len(tickers_to_fetch) == 1:
                             # Single ticker - data structure is different
                             price = float(data['Close'].iloc[-1])
                             volume = int(data['Volume'].iloc[-1]) if 'Volume' in data else 0
@@ -238,9 +273,9 @@ class HybridDataFetcher:
                                 volume = int(data['Volume'][ticker].iloc[-1]) if 'Volume' in data else 0
                             else:
                                 continue
-                        
+
                         if pd.notna(price):
-                            results[ticker] = {
+                            quote = {
                                 "ticker": ticker,
                                 "price": price,
                                 "bid": price * 0.999,
@@ -248,15 +283,18 @@ class HybridDataFetcher:
                                 "volume": volume,
                                 "source": "yfinance"
                             }
+                            results[ticker] = quote
+                            self._quote_cache[ticker] = (quote, now)
                     except Exception as e:
                         print(f"   Warning: Error processing {ticker}: {e}")
                         
         except Exception as e:
             print(f"   Warning: Batch download failed: {e}, trying individually...")
-            for ticker in clean_tickers:
+            for ticker in tickers_to_fetch:
                 quote = self.get_stock_quote(ticker)
                 if quote:
                     results[ticker] = quote
+                    self._quote_cache[ticker] = (quote, now)
         
         print(f"   Retrieved {len(results)}/{len(clean_tickers)} quotes")
         return results

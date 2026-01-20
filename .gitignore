@@ -27,6 +27,7 @@ universe.py.backup.*
 iv_cache.json
 earnings_cache.json
 scan_results/
+Positions-*.csv
 
 # IDE
 .vscode/

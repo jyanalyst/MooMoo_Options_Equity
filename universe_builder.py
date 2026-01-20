@@ -264,58 +264,6 @@ def fetch_stocks_from_finviz() -> pd.DataFrame:
     df = fetch_with_retry(screener, columns=columns)
     print(f"Stocks fetched from Finviz: {len(df)}")
 
-    # ═══════════════════════════════════════════════════════════════
-    # DIAGNOSTIC: Earnings Column Investigation
-    # ═══════════════════════════════════════════════════════════════
-    print("\n" + "="*70)
-    print("DIAGNOSTIC: EARNINGS COLUMN ANALYSIS")
-    print("="*70)
-
-    # Show all column names with indices
-    print("\n1. All columns in dataframe:")
-    for i, col in enumerate(df.columns):
-        print(f"   [{i:2d}] '{col}'")
-
-    # Find columns containing 'earn'
-    earnings_candidates = [col for col in df.columns if 'earn' in col.lower()]
-    print(f"\n2. Columns containing 'earn': {earnings_candidates}")
-
-    # If earnings column found, analyze its data
-    if earnings_candidates:
-        for col in earnings_candidates:
-            print(f"\n3. Analyzing column '{col}':")
-            print(f"   Data type: {df[col].dtype}")
-            print(f"   Non-null count: {df[col].notna().sum()}/{len(df)}")
-            print(f"   Unique values: {df[col].nunique()}")
-
-            # Show sample data
-            print(f"\n   Sample values (first 10 rows):")
-            for idx, val in enumerate(df[col].head(10)):
-                ticker = df.iloc[idx]['Ticker'] if 'Ticker' in df.columns else f"Row {idx}"
-                print(f"      {ticker:8s} -> '{val}'")
-
-            # Show non-null samples specifically
-            non_null = df[df[col].notna()]
-            if len(non_null) > 0:
-                print(f"\n   Non-null samples (showing up to 5):")
-                for idx, row in non_null.head(5).iterrows():
-                    ticker = row.get('Ticker', 'Unknown')
-                    earnings = row[col]
-                    print(f"      {ticker:8s} -> '{earnings}'")
-            else:
-                print(f"\n   ⚠️  WARNING: No non-null values found in '{col}'!")
-    else:
-        print("\n⚠️  CRITICAL: No columns containing 'earn' found!")
-        print("   This means earnings data is NOT being fetched.")
-        print("\n   Troubleshooting:")
-        print("   1. Verify column 68 is in the columns list")
-        print("   2. Check if finviz API changed column indices")
-        print("   3. Try using finvizfinance.screener.financial instead")
-
-    print("="*70)
-    print("END DIAGNOSTIC\n")
-    # ═══════════════════════════════════════════════════════════════
-
     # Debug: Show applied filters
     print("Applied filters:")
     for key, value in FINVIZ_FILTERS.items():
