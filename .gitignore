@@ -28,6 +28,9 @@ iv_cache.json
 earnings_cache.json
 scan_results/
 Positions-*.csv
+cache/
+logs/
+nul
 
 # IDE
 .vscode/

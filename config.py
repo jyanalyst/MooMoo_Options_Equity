@@ -4,6 +4,13 @@ Strategy parameters derived from Wheel Strategy Guide and Volatility Harvesting 
 """
 
 # =============================================================================
+# FINANCIAL MODELING PREP API SETTINGS
+# =============================================================================
+
+FMP_API_KEY = "SUmg1Fkg9IxxPrCGF8HFP3sdLLl35IUk"
+FMP_BASE_URL = "https://financialmodelingprep.com/stable"
+
+# =============================================================================
 # MOOMOO API SETTINGS
 # =============================================================================
 
@@ -39,7 +46,10 @@ WHEEL_CONFIG = {
     
     # Earnings buffer
     "earnings_buffer_days": 7,
-    
+
+    # Earnings validation (CONSERVATIVE MODE - UPDATED)
+    "allow_unverified_earnings": False,  # Reject stocks with missing earnings data (fail-safe default)
+
     # Term structure (contango = favorable)
     "term_structure_check": True,
 }
@@ -72,6 +82,9 @@ VOL_HARVEST_CONFIG = {
     
     # Earnings buffer
     "earnings_buffer_days": 0,  # No buffer needed, just not within DTE
+
+    # Earnings validation (CONSERVATIVE MODE - UPDATED)
+    "allow_unverified_earnings": False,  # Reject stocks with missing earnings data (fail-safe default)
 }
 
 # =============================================================================

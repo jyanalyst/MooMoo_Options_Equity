@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from config import WHEEL_CONFIG
-from universe import get_wheel_universe, format_moomoo_symbol, strip_moomoo_prefix
+from universe import get_wheel_universe, get_affordable_stocks, format_moomoo_symbol, strip_moomoo_prefix
 from earnings_checker import EarningsChecker
 from iv_analyzer import IVAnalyzer
 
@@ -28,17 +28,25 @@ class WheelScreener:
     - Term structure: Contango preferred
     """
     
-    def __init__(self, data_fetcher, tier: int = 2):
+    def __init__(self, data_fetcher, max_capital: int = None, tier: int = None):
         """
         Initialize Wheel Screener.
-        
+
         Args:
             data_fetcher: MooMooDataFetcher or MockDataFetcher instance
-            tier: Stock tier (1, 2, or 3) based on capital
+            max_capital: Maximum capital per position in dollars (optional)
+                        e.g., 10000 filters to stocks with price <= $100
+            tier: DEPRECATED - kept for backward compatibility, use max_capital instead
         """
         self.data_fetcher = data_fetcher
-        self.tier = tier
-        self.universe = get_wheel_universe(tier)
+        self.max_capital = max_capital
+
+        # Backward compatibility: convert tier to approximate capital
+        if tier is not None and max_capital is None:
+            tier_capital_map = {1: 7000, 2: 15000, 3: None}  # Approximate tier -> capital
+            self.max_capital = tier_capital_map.get(tier)
+
+        self.universe = get_wheel_universe(self.max_capital)
         self.earnings_checker = EarningsChecker()
         self.iv_analyzer = IVAnalyzer(data_fetcher)
         self.config = WHEEL_CONFIG
@@ -59,7 +67,8 @@ class WheelScreener:
         if verbose:
             print(f"\n{'='*60}")
             print(f"WHEEL STRATEGY SCREENER")
-            print(f"Universe: {len(self.universe)} stocks (Tier {self.tier})")
+            capital_str = f"max ${self.max_capital:,}" if self.max_capital else "all prices"
+            print(f"Universe: {len(self.universe)} stocks ({capital_str})")
             print(f"{'='*60}\n")
         
         # Step 1: Get quotes for all stocks

@@ -139,29 +139,40 @@ class EarningsChecker:
             return None
     
     def check_earnings_safe(
-        self, 
-        ticker: str, 
-        expiration_date: datetime, 
-        buffer_days: int = 7
+        self,
+        ticker: str,
+        expiration_date: datetime,
+        buffer_days: int = 7,
+        allow_unverified: bool = False
     ) -> Tuple[bool, Optional[datetime], str]:
         """
         Check if a stock is safe to trade (no earnings within window).
-        
+
+        CONSERVATIVE VALIDATION (UPDATED):
+        - By default, rejects stocks where earnings date cannot be verified
+        - Set allow_unverified=True to override (manual verification required)
+
         Args:
             ticker: Stock ticker
             expiration_date: Option expiration date
             buffer_days: Additional buffer days after expiration
-            
+            allow_unverified: If False (default), reject stocks with missing earnings data
+
         Returns:
             Tuple of (is_safe, earnings_date, reason)
-            - is_safe: True if OK to trade, False if earnings conflict
+            - is_safe: True if OK to trade, False if earnings conflict or unverified
             - earnings_date: The next earnings date (if found)
             - reason: Human-readable explanation
         """
         earnings_date = self.get_next_earnings_date(ticker)
-        
+
         if earnings_date is None:
-            return (True, None, "UNVERIFIED - earnings date not found, verify manually")
+            if allow_unverified:
+                # OVERRIDE MODE: Allow with warning (requires manual verification)
+                return (True, None, "UNVERIFIED (ALLOWED) - earnings date not found, verify manually")
+            else:
+                # CONSERVATIVE MODE (DEFAULT): Reject for safety
+                return (False, None, "REJECTED - earnings date not found (fail-safe mode, use --allow-unverified to override)")
         
         # Calculate the danger window
         today = datetime.now()
@@ -194,57 +205,61 @@ class EarningsChecker:
             )
     
     def batch_check_earnings(
-        self, 
-        tickers: list, 
-        expiration_date: datetime, 
-        buffer_days: int = 7
+        self,
+        tickers: list,
+        expiration_date: datetime,
+        buffer_days: int = 7,
+        allow_unverified: bool = False
     ) -> Dict[str, Tuple[bool, Optional[datetime], str]]:
         """
         Check earnings safety for multiple tickers.
-        
+
         Args:
             tickers: List of stock tickers
             expiration_date: Option expiration date
             buffer_days: Additional buffer days after expiration
-            
+            allow_unverified: If False (default), reject unverified stocks
+
         Returns:
             Dict mapping ticker to (is_safe, earnings_date, reason)
         """
         results = {}
-        
+
         for ticker in tickers:
-            results[ticker] = self.check_earnings_safe(ticker, expiration_date, buffer_days)
-        
+            results[ticker] = self.check_earnings_safe(ticker, expiration_date, buffer_days, allow_unverified)
+
         return results
     
     def get_safe_tickers(
-        self, 
-        tickers: list, 
-        expiration_date: datetime, 
+        self,
+        tickers: list,
+        expiration_date: datetime,
         buffer_days: int = 7,
-        include_unverified: bool = True
+        allow_unverified: bool = False
     ) -> list:
         """
         Filter tickers to only those safe from earnings.
-        
+
+        CONSERVATIVE DEFAULT (UPDATED):
+        - By default (allow_unverified=False), rejects stocks with missing earnings data
+        - Set allow_unverified=True to include unverified stocks (manual verification required)
+
         Args:
             tickers: List of stock tickers
             expiration_date: Option expiration date
             buffer_days: Additional buffer days after expiration
-            include_unverified: Include tickers where earnings couldn't be verified
-            
+            allow_unverified: If False (default), exclude tickers where earnings couldn't be verified
+
         Returns:
             List of safe tickers
         """
-        results = self.batch_check_earnings(tickers, expiration_date, buffer_days)
-        
+        results = self.batch_check_earnings(tickers, expiration_date, buffer_days, allow_unverified)
+
         safe_tickers = []
         for ticker, (is_safe, _, reason) in results.items():
             if is_safe:
-                if "UNVERIFIED" in reason and not include_unverified:
-                    continue
                 safe_tickers.append(ticker)
-        
+
         return safe_tickers
     
     def clear_cache(self):
