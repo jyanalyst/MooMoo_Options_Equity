@@ -133,8 +133,11 @@ QUALITY_WEIGHTS = {
 }
 
 DEFAULT_LIMITS = {
-    'universe_size': 30,  # Increased from 25 (gives buffer for swaps and filtering)
+    'universe_size': 32,  # Increased from 30 to include quality stocks at sector limits
 }
+
+# Minimum quality score for inclusion in universe
+MIN_QUALITY_FLOOR = 48  # Don't include stocks scoring below this threshold
 
 # =============================================================================
 # ADVANCED FEATURE THRESHOLDS (Week 2 FMP Integration)
@@ -182,14 +185,14 @@ GEOPOLITICAL_PENALTY = 0.80  # 20% penalty for China ADRs
 CYCLICAL_CONSUMER = ['LULU', 'NKE', 'SBUX', 'MCD', 'HD', 'LOW', 'TJX', 'ROST']
 
 SECTOR_DIVERSITY_CONSTRAINTS = {
-    'max_per_sector': 5,           # Increased from 4 (30 stocks / 6 sectors = 5)
-    'max_sector_pct': 0.25,        # No sector >25% of universe (stricter for balance)
+    'max_per_sector': 7,           # Increased from 5 to allow deeper quality pools in Tech/Financials
+    'max_sector_pct': 0.25,        # No sector >25% of universe (7/32 = 22%, within limit)
     'min_sectors': 5,              # At least 5 different sectors
-    'max_cyclical_total': 3,       # Increased from 2 (allows 1 energy + 2 materials OR vice versa)
+    'max_cyclical_total': 3,       # Allows 1 energy + 2 materials OR vice versa
     'required_minimum': {          # Hard minimums - must be satisfied
         'Consumer Defensive': 3,   # Ensure staples presence (KO, PG, WMT)
         'Healthcare': 3,           # Ensure healthcare presence (JNJ, MRK, PFE)
-        'Financial Services': 2,   # Quality banks (JPM, WFC, V)
+        'Financial Services': 2,   # Quality financials (V, SPGI, CME)
     },
     'preferred_sectors': [         # Recession-resistant sectors to prioritize
         'Healthcare',
@@ -303,8 +306,8 @@ Examples:
     parser.add_argument(
         '--universe-size',
         type=int,
-        default=30,
-        help='Target universe size (default: 30)'
+        default=DEFAULT_LIMITS['universe_size'],
+        help=f"Target universe size (default: {DEFAULT_LIMITS['universe_size']})"
     )
 
     parser.add_argument(
@@ -2001,7 +2004,7 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 25) -> List[str]:
     selected = []
     sector_counts = {}
     cyclical_count = 0
-    MIN_QUALITY_THRESHOLD = 30  # Lowered from 40 to allow more stocks for required sectors
+    MIN_QUALITY_THRESHOLD = MIN_QUALITY_FLOOR  # Use global quality floor (48)
 
     # === DEBUG: Track rejections ===
     rejections = {
@@ -2293,12 +2296,6 @@ def read_existing_universe() -> Dict[str, str]:
 
     preserved = {}
 
-    # Extract VOL_HARVEST_UNIVERSE
-    start = content.find('VOL_HARVEST_UNIVERSE = [')
-    if start != -1:
-        end = content.find(']', start) + 1
-        preserved['vol_harvest'] = content[start:end]
-
     # Extract EXCLUDED_TICKERS
     start = content.find('EXCLUDED_TICKERS = [')
     if start != -1:
@@ -2417,18 +2414,9 @@ WHEEL_UNIVERSE = [
 ]
 
 # Capital requirement per contract (Price x 100 for 1 CSP)
-CAPITAL_REQUIREMENTS = {{{{
+CAPITAL_REQUIREMENTS = {{
 {capital_entries}
-}}}}
-
-
-# =============================================================================
-# VOLATILITY HARVESTING UNIVERSE
-# [PRESERVED FROM EXISTING FILE - DO NOT MODIFY]
-# =============================================================================
-
-{preserved.get('vol_harvest', 'VOL_HARVEST_UNIVERSE = [\\n    # Add your vol harvest stocks here\\n]')}
-
+}}
 
 # =============================================================================
 # EXCLUDED TICKERS
@@ -2481,11 +2469,6 @@ def get_affordable_stocks(max_capital: int) -> list:
         if CAPITAL_REQUIREMENTS.get(t, 0) <= max_capital
     ]
     return sorted(affordable, key=lambda x: x[1])
-
-
-def get_vol_harvest_universe() -> list:
-    \"\"\"Get Volatility Harvesting universe\"\"\"
-    return [t for t in VOL_HARVEST_UNIVERSE if t not in EXCLUDED_TICKERS]
 
 
 def add_to_excluded(ticker: str):
@@ -2847,7 +2830,6 @@ def main():
         # Step 6: Preserve existing content
         print("\n[Step 6/7] Preserving existing content...")
         preserved = read_existing_universe()
-        print(f"  [OK] VOL_HARVEST_UNIVERSE ({len(preserved.get('vol_harvest', '').split(',')) if 'vol_harvest' in preserved else 0} stocks)")
         print(f"  [OK] EXCLUDED_TICKERS ({len(preserved.get('excluded', '').split(',')) if 'excluded' in preserved else 0} stocks)")
         print(f"  [OK] Helper functions ({len([line for line in preserved.get('functions', '').splitlines() if line.strip().startswith('def ')]) if 'functions' in preserved else 0} functions)")
 
