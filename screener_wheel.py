@@ -516,10 +516,10 @@ class WheelScreener:
 
 if __name__ == "__main__":
     from data_fetcher import get_data_fetcher
-    
+
     # Use mock data for testing
     fetcher = get_data_fetcher(use_mock=True)
-    screener = WheelScreener(fetcher, tier=1)
+    screener = WheelScreener(fetcher, max_capital=7000)  # ~$70 stocks
     
     # Reduce universe for quick test
     screener.universe = ["INTC", "F", "PLTR", "AMD", "SOFI"]

@@ -43,26 +43,26 @@ def print_banner():
     """)
 
 
-def run_wheel_scan(fetcher, tier: int = 2, export_csv: bool = True, verbose: bool = True):
+def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, verbose: bool = True):
     """
     Run Wheel Strategy screening.
-    
+
     Args:
         fetcher: Data fetcher instance
-        tier: Stock tier (1, 2, or 3)
+        max_capital: Maximum capital per position in USD (default: 8900 = 20% of $44,500 account)
         export_csv: Export results to CSV
         verbose: Print verbose output
-        
+
     Returns:
         List of candidates
     """
     print(f"\n{'═'*60}")
     print(f"🎯 WHEEL STRATEGY SCAN")
     print(f"   Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"   Tier: {tier}")
+    print(f"   Max Capital/Position: ${max_capital:,}")
     print(f"{'═'*60}")
-    
-    screener = WheelScreener(fetcher, tier=tier)
+
+    screener = WheelScreener(fetcher, max_capital=max_capital)
     candidates = screener.screen_candidates(verbose=verbose)
     
     formatter = OutputFormatter()
@@ -154,12 +154,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py wheel          # Scan for Wheel candidates
-  python main.py vol            # Scan for Vol Harvest candidates
-  python main.py both           # Run both scans
-  python main.py --mock wheel   # Test with mock data
-  python main.py wheel --tier 1 # Scan Tier 1 stocks only ($15-70)
-  python main.py both --no-csv  # Scan without CSV export
+  python main.py wheel              # Scan for Wheel candidates (default $8,900 max capital)
+  python main.py vol                # Scan for Vol Harvest candidates
+  python main.py both               # Run both scans
+  python main.py --mock wheel       # Test with mock data
+  python main.py wheel --capital 6700  # Scan stocks requiring ≤$6,700/position (15% sizing)
+  python main.py wheel --capital 8900  # Scan stocks requiring ≤$8,900/position (20% sizing)
+  python main.py both --no-csv      # Scan without CSV export
         """
     )
     
@@ -176,11 +177,10 @@ Examples:
     )
     
     parser.add_argument(
-        '--tier',
+        '--capital',
         type=int,
-        choices=[1, 2, 3],
-        default=2,
-        help='Wheel stock tier: 1 ($15-70), 2 ($15-150), 3 (all). Default: 2'
+        default=8900,
+        help='Maximum capital per position in USD (default: 8900 = 20%% of $44,500 account). Use 6700 for 15%% sizing.'
     )
     
     parser.add_argument(
@@ -247,8 +247,8 @@ Examples:
     try:
         if args.strategy in ['wheel', 'both']:
             wheel_candidates = run_wheel_scan(
-                fetcher, 
-                tier=args.tier, 
+                fetcher,
+                max_capital=args.capital,
                 export_csv=export_csv,
                 verbose=verbose
             )
