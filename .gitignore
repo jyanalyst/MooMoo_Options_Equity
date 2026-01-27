@@ -27,7 +27,10 @@ universe.py.backup.*
 iv_cache.json
 earnings_cache.json
 scan_results/
+reports/
 Positions-*.csv
+journal_data.csv
+.vix_state.json
 cache/
 logs/
 nul
