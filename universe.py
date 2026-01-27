@@ -163,27 +163,59 @@ EXCLUDED_TICKERS = [
 # HELPER FUNCTIONS
 # =============================================================================
 
-def get_wheel_universe(max_capital: int = None) -> list:
+def get_manual_tickers() -> list:
+    """
+    Get manually whitelisted tickers from config.
+
+    These bypass fundamental screening (ETFs, leveraged products, etc.)
+
+    Returns:
+        List of manual ticker symbols
+    """
+    try:
+        from config import MANUAL_TICKERS
+        return MANUAL_TICKERS if MANUAL_TICKERS else []
+    except ImportError:
+        return []
+
+
+def get_wheel_universe(max_capital: int = None, include_manual: bool = True) -> list:
     """
     Get Wheel universe, optionally filtered by available capital.
 
     Args:
         max_capital: Maximum capital per position in dollars (optional)
                     e.g., 10000 filters to stocks with price <= $100
+        include_manual: Include manually whitelisted tickers (default: True)
 
     Returns:
         List of tickers affordable within capital constraint
 
     Examples:
-        >>> get_wheel_universe()              # All stocks
-        >>> get_wheel_universe(5000)          # Stocks up to $50
-        >>> get_wheel_universe(10000)         # Stocks up to $100
-        >>> get_wheel_universe(25000)         # Stocks up to $250
+        >>> get_wheel_universe()              # All stocks + manual
+        >>> get_wheel_universe(5000)          # Stocks up to $50 + manual
+        >>> get_wheel_universe(10000)         # Stocks up to $100 + manual
+        >>> get_wheel_universe(25000)         # Stocks up to $250 + manual
     """
+    # Get quality-screened universe
     if max_capital is None:
-        return WHEEL_UNIVERSE
+        universe = list(WHEEL_UNIVERSE)
+    else:
+        universe = [t for t in WHEEL_UNIVERSE if CAPITAL_REQUIREMENTS.get(t, 0) <= max_capital]
 
-    return [t for t in WHEEL_UNIVERSE if CAPITAL_REQUIREMENTS.get(t, 0) <= max_capital]
+    # Add manual tickers (they bypass capital filtering since we don't know their price)
+    if include_manual:
+        manual = get_manual_tickers()
+        for ticker in manual:
+            if ticker not in universe:
+                universe.append(ticker)
+
+    return universe
+
+
+def is_manual_ticker(ticker: str) -> bool:
+    """Check if a ticker is from the manual whitelist (not quality-screened)."""
+    return ticker in get_manual_tickers()
 
 
 def get_affordable_stocks(max_capital: int) -> list:

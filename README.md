@@ -7,19 +7,12 @@ Automated screening tool for options income strategies using a **hybrid data app
 
 This hybrid approach **saves $60/month** by avoiding the Nasdaq Basic OpenAPI subscription.
 
-## Strategies Supported
+## Strategy: Wheel (Cash-Secured Puts)
 
-### 1. Wheel Strategy (Cash-Secured Puts)
 - Quality stocks you would own at the strike price
 - IV Rank >30%, Delta 0.20-0.30, DTE 30-45
-- Earnings avoidance with 14-day buffer
+- Earnings avoidance with 7-day buffer
 - Term structure analysis (contango preferred)
-
-### 2. Volatility Harvesting (Iron Condors)
-- High-IV names for premium harvesting
-- IV Rank >80%, Delta 0.15-0.20, DTE 21-35
-- Defined risk with capped losses
-- Post-squeeze candidates preferred
 
 ---
 

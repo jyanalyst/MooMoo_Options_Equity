@@ -151,6 +151,7 @@ class EarningsChecker:
         CONSERVATIVE VALIDATION (UPDATED):
         - By default, rejects stocks where earnings date cannot be verified
         - Set allow_unverified=True to override (manual verification required)
+        - Manual/ETF tickers are automatically marked safe (no earnings)
 
         Args:
             ticker: Stock ticker
@@ -164,6 +165,14 @@ class EarningsChecker:
             - earnings_date: The next earnings date (if found)
             - reason: Human-readable explanation
         """
+        # Check if this is a manual/ETF ticker (no earnings to check)
+        try:
+            from universe import is_manual_ticker
+            if is_manual_ticker(ticker):
+                return (True, None, "SAFE - ETF/manual ticker (no earnings)")
+        except ImportError:
+            pass
+
         earnings_date = self.get_next_earnings_date(ticker)
 
         if earnings_date is None:

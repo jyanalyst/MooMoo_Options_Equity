@@ -1,6 +1,6 @@
 """
 Configuration settings for Options Scanner
-Strategy parameters derived from Wheel Strategy Guide and Volatility Harvesting Strategy docs
+Strategy parameters derived from Wheel Strategy Guide
 """
 
 # =============================================================================
@@ -55,37 +55,14 @@ WHEEL_CONFIG = {
 }
 
 # =============================================================================
-# VOLATILITY HARVESTING PARAMETERS (Iron Condors)
+# MANUAL TICKER WHITELIST
+# Tickers added here bypass fundamental screening (e.g., ETFs, leveraged products)
+# WARNING: These are not quality-screened - understand the risks!
 # =============================================================================
 
-VOL_HARVEST_CONFIG = {
-    # Stock filters
-    "price_min": 5.0,
-    "price_max": 50.0,
-    
-    # Options filters
-    "iv_rank_min": 80,
-    "iv_rank_preferred": 100,
-    "short_delta_min": 0.15,
-    "short_delta_max": 0.20,
-    "long_delta_min": 0.05,
-    "long_delta_max": 0.10,
-    "dte_min": 21,
-    "dte_max": 35,
-    "volume_min": 500,
-    "bid_ask_spread_max_pct": 0.15,  # 15% of mid (wider acceptable)
-    
-    # Iron condor structure
-    "wing_width_min": 2.50,
-    "wing_width_max": 5.00,
-    "premium_pct_of_width_min": 0.33,  # Must collect >33% of width
-    
-    # Earnings buffer
-    "earnings_buffer_days": 0,  # No buffer needed, just not within DTE
-
-    # Earnings validation (CONSERVATIVE MODE - UPDATED)
-    "allow_unverified_earnings": False,  # Reject stocks with missing earnings data (fail-safe default)
-}
+MANUAL_TICKERS = [
+    "TQQQ",  # 3x Leveraged Nasdaq-100 ETF - HIGH RISK, no earnings
+]
 
 # =============================================================================
 # POSITION SIZING (Reference only - not used in scanner logic)
@@ -93,8 +70,6 @@ VOL_HARVEST_CONFIG = {
 
 POSITION_SIZING = {
     "total_capital": 44500,  # USD
-    "wheel_allocation_max_pct": 0.80,
-    "vol_harvest_allocation_max_pct": 0.20,
     "max_per_position_pct": 0.20,
     "target_position_pct_min": 0.10,
     "target_position_pct_max": 0.15,
@@ -108,7 +83,6 @@ POSITION_SIZING = {
 OUTPUT_CONFIG = {
     "csv_output_dir": "./scan_results",
     "csv_filename_wheel": "wheel_candidates_{date}.csv",
-    "csv_filename_vol_harvest": "vol_harvest_candidates_{date}.csv",
     "display_top_n": 10,  # Show top N candidates in terminal
 }
 

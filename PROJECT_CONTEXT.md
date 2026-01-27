@@ -51,7 +51,6 @@ Fixed universe builder producing 18 stocks instead of 25-30:
 
 - **Screeners**
   - Wheel Strategy ([screener_wheel.py](screener_wheel.py))
-  - Volatility Harvesting ([screener_vol_harvest.py](screener_vol_harvest.py))
 
 ### Filter Exemptions Summary
 | Filter | Financial Services | Consumer Defensive |

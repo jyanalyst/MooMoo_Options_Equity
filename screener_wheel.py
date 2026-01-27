@@ -138,13 +138,13 @@ class WheelScreener:
         }
 
         if verbose:
-            print(f"\n   🔍 DEBUGGING {ticker} (${quote['price']:.2f})")
+            print(f"\n   >> DEBUGGING {ticker} (${quote['price']:.2f})")
             print(f"      Step 1: Getting option expirations...")
 
         # Get option expirations
         expirations = self.data_fetcher.get_option_expirations(ticker)
         if verbose:
-            print(f"      └─ Expirations found: {len(expirations) if expirations else 0}")
+            print(f"      -> Expirations found: {len(expirations) if expirations else 0}")
             if expirations:
                 print(f"         Sample: {expirations[:3]}...")
 
@@ -152,7 +152,7 @@ class WheelScreener:
             result['status'] = 'REJECTED'
             result['reject_reason'] = 'No option expirations available'
             if verbose:
-                print(f"      ❌ REJECTED: {result['reject_reason']}")
+                print(f"      [X] REJECTED: {result['reject_reason']}")
             return result
 
         # Filter expirations by DTE
@@ -166,7 +166,7 @@ class WheelScreener:
         )
 
         if verbose:
-            print(f"      └─ Target expirations: {len(target_expirations)}")
+            print(f"      -> Target expirations: {len(target_expirations)}")
             if target_expirations:
                 for exp, dte in target_expirations[:3]:
                     print(f"         {exp} ({dte} DTE)")
@@ -175,7 +175,7 @@ class WheelScreener:
             result['status'] = 'REJECTED'
             result['reject_reason'] = f"No expirations in {self.config['dte_min']}-{self.config['dte_max']} DTE range"
             if verbose:
-                print(f"      ❌ REJECTED: {result['reject_reason']}")
+                print(f"      [X] REJECTED: {result['reject_reason']}")
             return result
 
         # Check earnings for each expiration
@@ -206,7 +206,7 @@ class WheelScreener:
             result['status'] = 'REJECTED'
             result['reject_reason'] = f"Earnings conflict for all expirations"
             if verbose:
-                print(f"      ❌ REJECTED: {result['reject_reason']}")
+                print(f"      [X] REJECTED: {result['reject_reason']}")
             return result
 
         expiration, dte = best_expiration
@@ -214,7 +214,7 @@ class WheelScreener:
         result['dte'] = dte
 
         if verbose:
-            print(f"      ✅ Earnings safe - using {expiration} ({dte} DTE)")
+            print(f"      [OK] Earnings safe - using {expiration} ({dte} DTE)")
             print(f"      Step 4: Analyzing IV metrics...")
 
         # Get IV analysis
@@ -225,20 +225,20 @@ class WheelScreener:
         result['term_structure_recommendation'] = iv_analysis.get('term_structure_recommendation')
 
         if verbose:
-            print(f"      └─ Current IV: {result['current_iv']}%")
-            print(f"      └─ IV Rank: {result['iv_rank']}%")
-            print(f"      └─ Term Structure: {result['term_structure']} ({result['term_structure_recommendation']})")
+            print(f"      -> Current IV: {result['current_iv']}%")
+            print(f"      -> IV Rank: {result['iv_rank']}%")
+            print(f"      -> Term Structure: {result['term_structure']} ({result['term_structure_recommendation']})")
 
         # Check IV Rank filter
         if result['iv_rank'] is not None and result['iv_rank'] < self.config['iv_rank_min']:
             result['status'] = 'REJECTED'
             result['reject_reason'] = f"IV Rank {result['iv_rank']:.1f}% < {self.config['iv_rank_min']}% minimum"
             if verbose:
-                print(f"      ❌ REJECTED: {result['reject_reason']}")
+                print(f"      [X] REJECTED: {result['reject_reason']}")
             return result
 
         if verbose:
-            print(f"      ✅ IV Rank filter passed")
+            print(f"      [OK] IV Rank filter passed")
             print(f"      Step 5: Getting options chain (PUTs, delta {self.config['delta_min']}-{self.config['delta_max']})...")
 
         # Get options chain with delta filter
@@ -257,10 +257,10 @@ class WheelScreener:
         )
 
         if verbose:
-            print(f"      └─ Chain returned: {len(chain) if chain is not None and not chain.empty else 0} options")
+            print(f"      -> Chain returned: {len(chain) if chain is not None and not chain.empty else 0} options")
             if chain is not None and not chain.empty:
-                print(f"      └─ Columns: {chain.columns.tolist()}")
-                print(f"      └─ Sample option:")
+                print(f"      -> Columns: {chain.columns.tolist()}")
+                print(f"      -> Sample option:")
                 sample = chain.iloc[0] if len(chain) > 0 else None
                 if sample is not None:
                     print(f"         Strike: ${sample.get('strike_price', 'N/A')}, Delta: {sample.get('delta', 'N/A')}, Bid: ${sample.get('bid', 'N/A')}, Ask: ${sample.get('ask', 'N/A')}, Volume: {sample.get('volume', 'N/A')}")
@@ -269,7 +269,7 @@ class WheelScreener:
             result['status'] = 'REJECTED'
             result['reject_reason'] = f"No options match delta {self.config['delta_min']}-{self.config['delta_max']} with volume >{self.config['volume_min']}"
             if verbose:
-                print(f"      ❌ REJECTED: {result['reject_reason']}")
+                print(f"      [X] REJECTED: {result['reject_reason']}")
             return result
 
         if verbose:
@@ -288,13 +288,13 @@ class WheelScreener:
                 valid_options.append(opt_analysis)
 
         if verbose:
-            print(f"      └─ Valid options after filters: {len(valid_options)}")
+            print(f"      -> Valid options after filters: {len(valid_options)}")
 
         if not valid_options:
             result['status'] = 'REJECTED'
             result['reject_reason'] = 'No options pass all filters (spread, premium)'
             if verbose:
-                print(f"      ❌ REJECTED: {result['reject_reason']}")
+                print(f"      [X] REJECTED: {result['reject_reason']}")
             return result
 
         # Sort options by quality score and take best
@@ -306,7 +306,7 @@ class WheelScreener:
         result['quality_score'] = self._calculate_quality_score(result)
 
         if verbose:
-            print(f"      ✅ CANDIDATE: {ticker}")
+            print(f"      [OK] CANDIDATE: {ticker}")
             print(f"         Expiration: {expiration} ({dte} DTE)")
             print(f"         IV Rank: {result['iv_rank']}%")
             print(f"         Best Strike: ${result['best_option']['strike']}")

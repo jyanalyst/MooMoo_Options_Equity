@@ -100,28 +100,28 @@ class HybridDataFetcher:
             True if connection successful, False otherwise
         """
         if not MOOMOO_AVAILABLE:
-            print("⚠️  MooMoo API not available - options features disabled")
+            print("[WARN] MooMoo API not available - options features disabled")
             return False
-            
+
         try:
             self.quote_ctx = OpenQuoteContext(host=self.host, port=self.port)
-            
+
             # Test connection
             ret, data = self.quote_ctx.get_global_state()
-            
+
             if ret == RET_OK:
                 self.moomoo_connected = True
-                print(f"✅ Connected to MooMoo OpenD at {self.host}:{self.port}")
-                print(f"   Stock quotes: yfinance (FREE)")
-                print(f"   Options data: MooMoo API (OPRA)")
+                print(f"[OK] Connected to MooMoo OpenD at {self.host}:{self.port}")
+                print(f"     Stock quotes: yfinance (FREE)")
+                print(f"     Options data: MooMoo API (OPRA)")
                 return True
             else:
-                print(f"❌ MooMoo connection test failed: {data}")
+                print(f"[ERROR] MooMoo connection test failed: {data}")
                 return False
-                
+
         except Exception as e:
-            print(f"❌ Failed to connect to MooMoo OpenD: {e}")
-            print("   Options features will not work without OpenD running")
+            print(f"[ERROR] Failed to connect to MooMoo OpenD: {e}")
+            print("        Options features will not work without OpenD running")
             return False
     
     def disconnect(self):
@@ -571,7 +571,7 @@ class MockDataFetcher:
     
     def __init__(self):
         self.connected = True
-        print("⚠️  Using MockDataFetcher - no real market data")
+        print("[WARN] Using MockDataFetcher - no real market data")
     
     def connect(self) -> bool:
         return True
