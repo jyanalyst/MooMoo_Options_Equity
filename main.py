@@ -35,7 +35,7 @@ def print_banner():
     """)
 
 
-def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, verbose: bool = True):
+def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, verbose: bool = True, allow_unverified: bool = False):
     """
     Run Wheel Strategy screening.
 
@@ -44,6 +44,7 @@ def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, ve
         max_capital: Maximum capital per position in USD (default: 8900 = 20% of $44,500 account)
         export_csv: Export results to CSV
         verbose: Print verbose output
+        allow_unverified: Allow stocks with unverified earnings dates
 
     Returns:
         List of candidates
@@ -52,9 +53,11 @@ def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, ve
     print(f">>> WHEEL STRATEGY SCAN")
     print(f"    Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"    Max Capital/Position: ${max_capital:,}")
+    if allow_unverified:
+        print(f"    [!] Allow Unverified: ON (manual earnings check required)")
     print(f"{'='*60}")
 
-    screener = WheelScreener(fetcher, max_capital=max_capital)
+    screener = WheelScreener(fetcher, max_capital=max_capital, allow_unverified=allow_unverified)
     candidates = screener.screen_candidates(verbose=verbose)
 
     formatter = OutputFormatter()
@@ -152,6 +155,12 @@ Examples:
         help='Enter interactive mode after scan to view details'
     )
 
+    parser.add_argument(
+        '--allow-unverified',
+        action='store_true',
+        help='Allow stocks with unverified earnings dates (requires manual verification)'
+    )
+
     args = parser.parse_args()
 
     # Print banner
@@ -198,7 +207,8 @@ Examples:
             fetcher,
             max_capital=args.capital,
             export_csv=export_csv,
-            verbose=verbose
+            verbose=verbose,
+            allow_unverified=args.allow_unverified
         )
 
         # Print summary
