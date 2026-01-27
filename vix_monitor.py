@@ -1,61 +1,54 @@
 #!/usr/bin/env python3
 """
-VIX Regime Alert System for Wheel Strategy
+VIX Regime Monitor - CSV Logging Version
 
-Real-time monitoring of VIX level with email alerts when crossing regime thresholds:
-- VIX < 14: LOW volatility (reduce position sizes, consider waiting)
-- VIX 14-18: NORMAL (start/continue trading, standard sizing)
-- VIX 18-25: ELEVATED (favorable conditions, normal-to-aggressive sizing)
-- VIX > 25: HIGH (aggressive deployment, increase position sizes)
+Tracks VIX history and regime changes for trade journaling.
+Appends readings to monthly CSV files for historical analysis.
 
-Designed to run:
-- Manually: python vix_monitor.py
-- Cron job: Every 4 hours during market hours (9:30 AM - 4:00 PM ET)
-  Example: 30 9,13 * * 1-5 (9:30 AM and 1:30 PM ET on weekdays)
+Regimes:
+- LOW (<14): Stop trading - premium too low
+- NORMAL (14-18): Standard sizing (100%)
+- ELEVATED (18-25): Aggressive deployment (150% sizing)
+- HIGH (>25): Maximum opportunity - deploy all capital
 
-State is persisted in .vix_state.json to detect threshold crossings.
-SMTP credentials should be set via environment variables for security.
+Output:
+- Monthly CSV: reports/vix/vix_history_YYYY-MM.csv
+- Console alerts on regime changes
+
+Usage:
+    python vix_monitor.py              # Check VIX and log to CSV
+    python vix_monitor.py --status     # Show current regime (no logging)
+    python vix_monitor.py --history    # Display last 10 checks
 """
 
 import os
 import sys
-import json
 import logging
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Tuple
+import csv
+from datetime import datetime
 from pathlib import Path
+from typing import Optional, Dict, Tuple, List
 import requests
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
-# Import FMP API key
 from config import FMP_API_KEY
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
-# VIX regime thresholds
+# Output directory
+REPORTS_DIR = Path(__file__).parent / 'reports' / 'vix'
+
+# VIX thresholds
 VIX_THRESHOLDS = [14, 18, 25]
 
 # Regime definitions
 VIX_REGIMES = {
-    'LOW': {'min': 0, 'max': 14, 'action': 'Reduce position sizes, consider waiting for better IV'},
-    'NORMAL': {'min': 14, 'max': 18, 'action': 'Standard trading, normal position sizes'},
-    'ELEVATED': {'min': 18, 'max': 25, 'action': 'Favorable conditions, normal-to-aggressive sizing'},
-    'HIGH': {'min': 25, 'max': 100, 'action': 'Aggressive deployment, increase position sizes'}
+    'LOW': {'min': 0, 'max': 14, 'action': 'Stop trading - premium too low'},
+    'NORMAL': {'min': 14, 'max': 18, 'action': 'Standard sizing (100%)'},
+    'ELEVATED': {'min': 18, 'max': 25, 'action': 'Aggressive deployment (150% sizing)'},
+    'HIGH': {'min': 25, 'max': 999, 'action': 'Maximum opportunity - deploy all capital'}
 }
-
-# State file for tracking VIX history
-STATE_FILE = Path('.vix_state.json')
-
-# SMTP Configuration (use environment variables for security)
-SMTP_SERVER = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
-SENDER_EMAIL = os.getenv('SENDER_EMAIL')
-SENDER_PASSWORD = os.getenv('SENDER_PASSWORD')
-RECIPIENT_EMAIL = os.getenv('RECIPIENT_EMAIL')
 
 # Logging configuration
 logging.basicConfig(
@@ -64,56 +57,6 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# STATE MANAGEMENT
-# =============================================================================
-
-def load_state() -> Dict:
-    """
-    Load VIX state from file.
-
-    Returns:
-        State dict with keys: last_vix, last_check, last_regime
-    """
-    if STATE_FILE.exists():
-        try:
-            with open(STATE_FILE, 'r') as f:
-                state = json.load(f)
-                logger.info(f"Loaded state: VIX={state.get('last_vix')}, Regime={state.get('last_regime')}")
-                return state
-        except (json.JSONDecodeError, IOError) as e:
-            logger.warning(f"Could not load state file: {e}")
-
-    # Default state (no history)
-    return {
-        'last_vix': None,
-        'last_check': None,
-        'last_regime': None
-    }
-
-
-def save_state(vix: float, regime: str) -> None:
-    """
-    Save VIX state to file.
-
-    Args:
-        vix: Current VIX value
-        regime: Current regime name (LOW, NORMAL, ELEVATED, HIGH)
-    """
-    state = {
-        'last_vix': vix,
-        'last_check': datetime.now().isoformat(),
-        'last_regime': regime
-    }
-
-    try:
-        with open(STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=2)
-        logger.info(f"Saved state: VIX={vix:.2f}, Regime={regime}")
-    except IOError as e:
-        logger.error(f"Could not save state file: {e}")
 
 
 # =============================================================================
@@ -127,7 +70,6 @@ def get_vix_from_fmp() -> Optional[float]:
     Returns:
         VIX value as float, or None if fetch fails
     """
-    # Try stable API quote endpoint
     url = "https://financialmodelingprep.com/stable/quote"
     params = {
         'symbol': '^VIX',
@@ -142,10 +84,7 @@ def get_vix_from_fmp() -> Optional[float]:
         if data and len(data) > 0:
             vix = data[0].get('price')
             if vix is not None:
-                logger.info(f"Fetched VIX from FMP: {vix:.2f}")
                 return float(vix)
-
-        logger.debug(f"FMP VIX response: {data}")
         return None
 
     except Exception as e:
@@ -166,10 +105,7 @@ def get_vix_from_yfinance() -> Optional[float]:
         hist = vix.history(period="1d")
 
         if not hist.empty:
-            price = float(hist['Close'].iloc[-1])
-            logger.info(f"Fetched VIX from yfinance: {price:.2f}")
-            return price
-
+            return float(hist['Close'].iloc[-1])
         return None
 
     except ImportError:
@@ -180,28 +116,37 @@ def get_vix_from_yfinance() -> Optional[float]:
         return None
 
 
-def get_vix_quote() -> Optional[float]:
+def fetch_vix() -> Optional[float]:
     """
-    Fetch current VIX level (tries FMP first, then yfinance).
+    Fetch current VIX (tries FMP first, then yfinance).
 
     Returns:
         VIX value as float, or None if all sources fail
     """
-    # Try FMP stable API first
+    # Try FMP first
     vix = get_vix_from_fmp()
 
+    if vix is not None:
+        logger.info(f"Fetched VIX from FMP: {vix:.2f}")
+        return vix
+
     # Fallback to yfinance
-    if vix is None:
-        logger.info("FMP VIX unavailable, trying yfinance...")
-        vix = get_vix_from_yfinance()
+    logger.info("FMP unavailable, trying yfinance...")
+    vix = get_vix_from_yfinance()
 
-    if vix is None:
-        logger.error("Could not fetch VIX from any source")
+    if vix is not None:
+        logger.info(f"Fetched VIX from yfinance: {vix:.2f}")
+        return vix
 
-    return vix
+    logger.error("Could not fetch VIX from any source")
+    return None
 
 
-def get_vix_regime(vix: float) -> str:
+# =============================================================================
+# REGIME LOGIC
+# =============================================================================
+
+def get_regime(vix: float) -> str:
     """
     Determine VIX regime from value.
 
@@ -209,7 +154,7 @@ def get_vix_regime(vix: float) -> str:
         vix: Current VIX value
 
     Returns:
-        Regime name: 'LOW', 'NORMAL', 'ELEVATED', or 'HIGH'
+        Regime name: LOW, NORMAL, ELEVATED, or HIGH
     """
     if vix < 14:
         return 'LOW'
@@ -221,44 +166,23 @@ def get_vix_regime(vix: float) -> str:
         return 'HIGH'
 
 
-def get_regime_details(regime: str) -> Dict:
+def detect_crossing(old_vix: Optional[float], new_vix: float) -> Tuple[bool, Optional[int], Optional[str]]:
     """
-    Get regime configuration details.
+    Detect threshold crossing.
 
     Args:
-        regime: Regime name
-
-    Returns:
-        Dict with min, max, action keys
-    """
-    return VIX_REGIMES.get(regime, VIX_REGIMES['NORMAL'])
-
-
-def detect_threshold_crossing(
-    old_vix: Optional[float],
-    new_vix: float
-) -> Tuple[bool, Optional[int], Optional[str]]:
-    """
-    Detect if VIX crossed any threshold.
-
-    Args:
-        old_vix: Previous VIX value (None if first check)
+        old_vix: Previous VIX value
         new_vix: Current VIX value
 
     Returns:
-        Tuple of (crossed, threshold, direction)
-        - crossed: True if any threshold was crossed
-        - threshold: The threshold that was crossed (14, 18, or 25)
-        - direction: 'UP' or 'DOWN'
+        (crossed, threshold, direction)
     """
     if old_vix is None:
         return (False, None, None)
 
     for threshold in VIX_THRESHOLDS:
-        # Crossed UP
         if old_vix < threshold <= new_vix:
             return (True, threshold, 'UP')
-        # Crossed DOWN
         if old_vix >= threshold > new_vix:
             return (True, threshold, 'DOWN')
 
@@ -266,459 +190,231 @@ def detect_threshold_crossing(
 
 
 # =============================================================================
-# EMAIL GENERATION
+# CSV LOGGING
 # =============================================================================
 
-def generate_alert_email(
+def get_csv_filepath() -> Path:
+    """Get path to current month's CSV file."""
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    current_month = datetime.now().strftime('%Y-%m')
+    return REPORTS_DIR / f"vix_history_{current_month}.csv"
+
+
+def get_last_reading() -> Optional[Dict]:
+    """
+    Get most recent VIX reading from current month's CSV.
+
+    Returns:
+        Dict with vix, regime, timestamp or None
+    """
+    csv_file = get_csv_filepath()
+
+    if not csv_file.exists():
+        return None
+
+    try:
+        with open(csv_file, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+            if rows:
+                last_row = rows[-1]
+                return {
+                    'vix': float(last_row['vix']),
+                    'regime': last_row['regime'],
+                    'timestamp': last_row['timestamp']
+                }
+    except Exception as e:
+        logger.debug(f"Error reading last VIX: {e}")
+
+    return None
+
+
+def append_to_csv(
+    vix: float,
+    regime: str,
+    regime_change: bool,
+    threshold: Optional[int],
+    direction: Optional[str],
+    notes: str = ''
+):
+    """
+    Append VIX reading to monthly CSV.
+
+    Args:
+        vix: Current VIX value
+        regime: Current regime name
+        regime_change: True if regime changed from last reading
+        threshold: Threshold crossed (if any)
+        direction: UP or DOWN (if threshold crossed)
+        notes: Additional notes
+    """
+    csv_file = get_csv_filepath()
+    file_exists = csv_file.exists()
+
+    row = {
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'vix': f"{vix:.2f}",
+        'regime': regime,
+        'regime_change': regime_change,
+        'threshold_crossed': threshold if threshold else '',
+        'direction': direction if direction else '',
+        'notes': notes
+    }
+
+    fieldnames = ['timestamp', 'vix', 'regime', 'regime_change', 'threshold_crossed', 'direction', 'notes']
+
+    with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow(row)
+
+    logger.info(f"Logged to: {csv_file.name}")
+
+
+# =============================================================================
+# CONSOLE OUTPUT
+# =============================================================================
+
+def print_regime_alert(
     vix: float,
     regime: str,
     old_vix: Optional[float],
     old_regime: Optional[str],
     threshold: int,
     direction: str
-) -> Tuple[str, str, str]:
-    """
-    Generate VIX alert email (subject, HTML body, text body).
-
-    Args:
-        vix: Current VIX value
-        regime: Current regime name
-        old_vix: Previous VIX value
-        old_regime: Previous regime name
-        threshold: The threshold that was crossed
-        direction: 'UP' or 'DOWN'
-
-    Returns:
-        Tuple of (subject, html_body, text_body)
-    """
-    # Determine alert type and emoji
-    if direction == 'UP':
-        if threshold == 25:
-            emoji = ""
-            alert_type = "HIGH VOL ALERT"
-            color = "#d32f2f"
-        elif threshold == 18:
-            emoji = ""
-            alert_type = "VOL ELEVATED"
-            color = "#ff8f00"
-        else:  # 14
-            emoji = ""
-            alert_type = "VOL NORMALIZED"
-            color = "#388e3c"
-    else:  # DOWN
-        if threshold == 25:
-            emoji = ""
-            alert_type = "VOL COOLING"
-            color = "#ff8f00"
-        elif threshold == 18:
-            emoji = ""
-            alert_type = "VOL NORMALIZING"
-            color = "#388e3c"
-        else:  # 14
-            emoji = ""
-            alert_type = "LOW VOL ALERT"
-            color = "#1976d2"
-
-    regime_details = get_regime_details(regime)
-    arrow = "" if direction == 'UP' else ""
-
-    # Subject line
-    subject = f"{emoji} VIX {alert_type}: {vix:.2f} ({arrow} crossed {threshold})"
-
-    # HTML body
-    html_body = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-        }}
-        .alert-box {{
-            background-color: {color};
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-            margin-bottom: 20px;
-        }}
-        .alert-box h1 {{
-            margin: 0;
-            font-size: 28px;
-        }}
-        .vix-value {{
-            font-size: 48px;
-            font-weight: bold;
-            margin: 10px 0;
-        }}
-        .threshold {{
-            font-size: 18px;
-            opacity: 0.9;
-        }}
-        .details {{
-            background-color: #f5f5f5;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }}
-        .details table {{
-            width: 100%;
-            border-collapse: collapse;
-        }}
-        .details td {{
-            padding: 8px 0;
-            border-bottom: 1px solid #ddd;
-        }}
-        .details td:first-child {{
-            font-weight: bold;
-            width: 40%;
-        }}
-        .action {{
-            background-color: #e3f2fd;
-            border-left: 4px solid #1976d2;
-            padding: 15px;
-            margin-bottom: 20px;
-        }}
-        .action h3 {{
-            margin-top: 0;
-            color: #1976d2;
-        }}
-        .footer {{
-            color: #666;
-            font-size: 12px;
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
-        }}
-    </style>
-</head>
-<body>
-    <div class="alert-box">
-        <h1>{emoji} VIX {alert_type}</h1>
-        <div class="vix-value">{vix:.2f}</div>
-        <div class="threshold">{arrow} Crossed {threshold} threshold</div>
-    </div>
-
-    <div class="details">
-        <table>
-            <tr>
-                <td>Current VIX:</td>
-                <td>{vix:.2f}</td>
-            </tr>
-            <tr>
-                <td>Previous VIX:</td>
-                <td>{old_vix:.2f if old_vix else 'N/A'}</td>
-            </tr>
-            <tr>
-                <td>Current Regime:</td>
-                <td><strong>{regime}</strong> (VIX {regime_details['min']}-{regime_details['max']})</td>
-            </tr>
-            <tr>
-                <td>Previous Regime:</td>
-                <td>{old_regime or 'N/A'}</td>
-            </tr>
-            <tr>
-                <td>Threshold Crossed:</td>
-                <td>{threshold} ({direction})</td>
-            </tr>
-            <tr>
-                <td>Timestamp:</td>
-                <td>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td>
-            </tr>
-        </table>
-    </div>
-
-    <div class="action">
-        <h3>Recommended Action</h3>
-        <p>{regime_details['action']}</p>
-    </div>
-
-    <div class="details">
-        <h4>VIX Regime Guide</h4>
-        <table>
-            <tr><td>LOW (&lt;14)</td><td>Reduce positions, wait for better IV</td></tr>
-            <tr><td>NORMAL (14-18)</td><td>Standard trading, normal sizing</td></tr>
-            <tr><td>ELEVATED (18-25)</td><td>Favorable conditions, aggressive sizing OK</td></tr>
-            <tr><td>HIGH (&gt;25)</td><td>Aggressive deployment, increase sizes</td></tr>
-        </table>
-    </div>
-
-    <div class="footer">
-        <p>
-            Generated by <strong>vix_monitor.py</strong><br>
-            Data source: Financial Modeling Prep (FMP) API<br>
-            Thresholds: {', '.join(map(str, VIX_THRESHOLDS))}
-        </p>
-    </div>
-</body>
-</html>
-"""
-
-    # Plain text body
-    text_body = f"""
-VIX {alert_type}
-{'='*50}
-
-Current VIX: {vix:.2f}
-Previous VIX: {old_vix:.2f if old_vix else 'N/A'}
-Threshold Crossed: {threshold} ({direction})
-
-Current Regime: {regime} (VIX {regime_details['min']}-{regime_details['max']})
-Previous Regime: {old_regime or 'N/A'}
-
-RECOMMENDED ACTION:
-{regime_details['action']}
-
-VIX REGIME GUIDE:
-- LOW (<14): Reduce positions, wait for better IV
-- NORMAL (14-18): Standard trading, normal sizing
-- ELEVATED (18-25): Favorable conditions, aggressive sizing OK
-- HIGH (>25): Aggressive deployment, increase sizes
-
-{'='*50}
-Generated by vix_monitor.py
-Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-"""
-
-    return subject, html_body, text_body
+):
+    """Print console alert for regime change."""
+    print("\n" + "="*70)
+    print("   VIX REGIME CHANGE DETECTED")
+    print("="*70)
+    print(f"")
+    print(f"   Previous VIX:  {old_vix:.2f} ({old_regime})" if old_vix else "   Previous VIX:  N/A")
+    print(f"   Current VIX:   {vix:.2f} ({regime})")
+    print(f"")
+    print(f"   Threshold crossed: {threshold} ({direction})")
+    print(f"")
+    print(f"   ACTION REQUIRED:")
+    print(f"   {VIX_REGIMES[regime]['action']}")
+    print("")
+    print("="*70 + "\n")
 
 
-# =============================================================================
-# EMAIL SENDING
-# =============================================================================
+def show_history(n: int = 10):
+    """Display last N VIX readings."""
+    csv_file = get_csv_filepath()
 
-def send_email(subject: str, html_body: str, text_body: str) -> bool:
-    """
-    Send email via SMTP (Gmail by default).
+    if not csv_file.exists():
+        print("\n   No history available for current month")
+        return
 
-    Args:
-        subject: Email subject line
-        html_body: HTML content
-        text_body: Plain text fallback
+    print(f"\n   Last {n} VIX readings:")
+    print("   " + "-"*70)
+    print(f"   {'Timestamp':<20} {'VIX':>6} {'Regime':<10} {'Change':<8} {'Notes':<20}")
+    print("   " + "-"*70)
 
-    Returns:
-        True if sent successfully, False otherwise
-    """
-    if not SENDER_EMAIL or not SENDER_PASSWORD:
-        logger.error(
-            "Email credentials not configured.\n"
-            "Set environment variables:\n"
-            "  export SENDER_EMAIL='your-email@gmail.com'\n"
-            "  export SENDER_PASSWORD='your-app-specific-password'\n"
-            "  export RECIPIENT_EMAIL='destination@email.com' (optional)"
-        )
-        return False
+    with open(csv_file, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
 
-    recipient = RECIPIENT_EMAIL or SENDER_EMAIL
+        for row in rows[-n:]:
+            change_mark = "  *" if row['regime_change'] == 'True' else "   "
+            notes = row.get('notes', '')[:20]
+            print(f"   {row['timestamp']:<20} {float(row['vix']):>6.2f} {row['regime']:<10} {change_mark:<8} {notes:<20}")
 
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = subject
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = recipient
+    print("   " + "-"*70 + "\n")
 
-    msg.attach(MIMEText(text_body, 'plain'))
-    msg.attach(MIMEText(html_body, 'html'))
 
-    try:
-        logger.info(f"Connecting to SMTP server {SMTP_SERVER}:{SMTP_PORT}...")
+def show_status(vix: float, regime: str):
+    """Display current VIX status."""
+    print(f"\n   Current VIX: {vix:.2f}")
+    print(f"   Regime: {regime}")
+    print(f"   Action: {VIX_REGIMES[regime]['action']}")
 
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
-
-        logger.info(f"Alert email sent to {recipient}")
-        return True
-
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"SMTP authentication failed: {e}")
-        return False
-
-    except smtplib.SMTPException as e:
-        logger.error(f"SMTP error: {e}")
-        return False
-
-    except Exception as e:
-        logger.error(f"Failed to send email: {e}")
-        return False
+    # Distance to thresholds
+    print("\n   Distance to thresholds:")
+    for t in VIX_THRESHOLDS:
+        diff = vix - t
+        direction = "above" if diff > 0 else "below"
+        print(f"     {t}: {abs(diff):.2f} {direction}")
 
 
 # =============================================================================
 # MAIN EXECUTION
 # =============================================================================
 
-def check_market_hours() -> bool:
-    """
-    Check if US market is currently open (rough estimate).
-
-    Note: Does not account for holidays. Use external API for production.
-
-    Returns:
-        True if likely during market hours, False otherwise
-    """
-    # Simple check: weekday and between 9:30 AM - 4:00 PM ET
-    # This is a rough estimate; production should use market calendar API
-    from datetime import timezone
-
-    now = datetime.now()
-    weekday = now.weekday()
-
-    # Skip weekends
-    if weekday >= 5:
-        return False
-
-    # Rough market hours check (local time - adjust for your timezone)
-    # Note: This is approximate. For production, use pytz or timezone-aware logic
-    hour = now.hour
-    minute = now.minute
-
-    # Assume we're roughly aligned with ET for simplicity
-    # 9:30 AM - 4:00 PM ET
-    if hour < 9 or (hour == 9 and minute < 30):
-        return False
-    if hour >= 16:
-        return False
-
-    return True
-
-
-def run_monitor(
-    force_alert: bool = False,
-    dry_run: bool = False,
-    skip_market_check: bool = False
-) -> Dict:
+def run_monitor(status_only: bool = False) -> Dict:
     """
     Run the VIX monitor.
 
     Args:
-        force_alert: Send alert even if no threshold crossed (for testing)
-        dry_run: Don't send email (just print status)
-        skip_market_check: Skip market hours check
+        status_only: If True, show status without logging
 
     Returns:
         Dict with results
     """
-    print("\n" + "="*60)
-    print("VIX REGIME MONITOR")
-    print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*60 + "\n")
-
-    # Check market hours (optional)
-    if not skip_market_check:
-        is_market_hours = check_market_hours()
-        print(f"Market hours check: {'OPEN' if is_market_hours else 'CLOSED'}")
-        if not is_market_hours:
-            print("Note: Running outside market hours (use --skip-market-check to ignore)")
-
-    # Load previous state
-    state = load_state()
-    old_vix = state.get('last_vix')
-    old_regime = state.get('last_regime')
-
-    print(f"Previous state: VIX={old_vix}, Regime={old_regime}")
+    print("\n" + "="*70)
+    print(f"VIX REGIME MONITOR - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*70)
 
     # Fetch current VIX
-    vix = get_vix_quote()
+    current_vix = fetch_vix()
 
-    if vix is None:
-        print("ERROR: Could not fetch VIX. Check API key and connection.")
-        return {'error': 'Failed to fetch VIX', 'email_sent': False}
+    if current_vix is None:
+        print("\n   Could not fetch VIX - exiting")
+        return {'error': 'Failed to fetch VIX'}
 
-    # Determine current regime
-    regime = get_vix_regime(vix)
-    regime_details = get_regime_details(regime)
+    current_regime = get_regime(current_vix)
 
-    print(f"\nCurrent VIX: {vix:.2f}")
-    print(f"Current Regime: {regime} (VIX {regime_details['min']}-{regime_details['max']})")
-    print(f"Action: {regime_details['action']}")
+    # Show status
+    show_status(current_vix, current_regime)
 
-    # Check for threshold crossing
-    crossed, threshold, direction = detect_threshold_crossing(old_vix, vix)
+    # Status-only mode (no logging)
+    if status_only:
+        print("\n" + "="*70 + "\n")
+        return {
+            'vix': current_vix,
+            'regime': current_regime
+        }
 
-    email_sent = False
+    # Get last reading for comparison
+    last_reading = get_last_reading()
 
-    if crossed:
-        print(f"\n*** THRESHOLD CROSSED: {threshold} ({direction}) ***")
+    if last_reading:
+        old_vix = last_reading['vix']
+        old_regime = last_reading['regime']
 
-        if not dry_run:
-            subject, html_body, text_body = generate_alert_email(
-                vix, regime, old_vix, old_regime, threshold, direction
-            )
-            email_sent = send_email(subject, html_body, text_body)
+        print(f"\n   Last reading: {old_vix:.2f} ({old_regime}) at {last_reading['timestamp']}")
+
+        # Detect crossing
+        crossed, threshold, direction = detect_crossing(old_vix, current_vix)
+        regime_change = (old_regime != current_regime)
+
+        if crossed:
+            print_regime_alert(current_vix, current_regime, old_vix, old_regime, threshold, direction)
+            notes = f"Crossed {threshold} - {VIX_REGIMES[current_regime]['action']}"
+        elif regime_change:
+            notes = f"Regime: {old_regime} -> {current_regime}"
         else:
-            print("[DRY RUN] Would send alert email")
+            notes = "Regime stable"
 
-    elif force_alert:
-        print("\n[FORCE ALERT] Sending alert regardless of threshold crossing...")
-
-        if not dry_run:
-            # Use 0 as threshold for forced alert
-            subject, html_body, text_body = generate_alert_email(
-                vix, regime, old_vix, old_regime, 0, 'CHECK'
-            )
-            subject = f"VIX Status Check: {vix:.2f} ({regime})"
-            email_sent = send_email(subject, html_body, text_body)
-        else:
-            print("[DRY RUN] Would send forced alert email")
+        # Log to CSV
+        append_to_csv(current_vix, current_regime, regime_change, threshold, direction, notes)
 
     else:
-        print("\nNo threshold crossed. No alert needed.")
+        print("\n   First check of the month - establishing baseline")
+        append_to_csv(current_vix, current_regime, False, None, None, "Initial reading")
 
-    # Save current state
-    save_state(vix, regime)
-
-    print("\n" + "="*60)
-    print("Monitor complete.")
-    print("="*60 + "\n")
+    print("\n" + "="*70 + "\n")
 
     return {
-        'vix': vix,
-        'regime': regime,
-        'old_vix': old_vix,
-        'old_regime': old_regime,
-        'crossed': crossed,
-        'threshold': threshold,
-        'direction': direction,
-        'email_sent': email_sent
+        'vix': current_vix,
+        'regime': current_regime,
+        'old_vix': last_reading['vix'] if last_reading else None,
+        'old_regime': last_reading['regime'] if last_reading else None
     }
-
-
-def show_status():
-    """Display current VIX status without sending alerts."""
-    print("\n" + "="*60)
-    print("VIX STATUS CHECK")
-    print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*60 + "\n")
-
-    # Load state
-    state = load_state()
-    print(f"Last recorded VIX: {state.get('last_vix', 'N/A')}")
-    print(f"Last regime: {state.get('last_regime', 'N/A')}")
-    print(f"Last check: {state.get('last_check', 'N/A')}")
-
-    # Fetch current
-    vix = get_vix_quote()
-    if vix:
-        regime = get_vix_regime(vix)
-        details = get_regime_details(regime)
-        print(f"\nCurrent VIX: {vix:.2f}")
-        print(f"Current Regime: {regime}")
-        print(f"Recommended: {details['action']}")
-
-        # Show distance to thresholds
-        print("\nDistance to thresholds:")
-        for t in VIX_THRESHOLDS:
-            diff = vix - t
-            direction = "above" if diff > 0 else "below"
-            print(f"  {t}: {abs(diff):.2f} {direction}")
-    else:
-        print("\nCould not fetch current VIX.")
 
 
 def main():
@@ -726,56 +422,37 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='VIX Regime Monitor - Alert on threshold crossings'
-    )
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help="Don't send email (just print status)"
-    )
-    parser.add_argument(
-        '--force-alert',
-        action='store_true',
-        help='Send alert even if no threshold crossed (for testing)'
+        description='VIX Regime Monitor - CSV Logging Version'
     )
     parser.add_argument(
         '--status',
         action='store_true',
-        help='Show current VIX status only (no alerts)'
+        help='Show current regime without logging'
     )
     parser.add_argument(
-        '--skip-market-check',
+        '--history',
         action='store_true',
-        help='Skip market hours check'
+        help='Show last 10 VIX readings'
     )
     parser.add_argument(
-        '--reset-state',
-        action='store_true',
-        help='Reset state file (clear VIX history)'
+        '-n',
+        type=int,
+        default=10,
+        help='Number of history entries to show (default: 10)'
     )
 
     args = parser.parse_args()
 
-    # Reset state if requested
-    if args.reset_state:
-        if STATE_FILE.exists():
-            STATE_FILE.unlink()
-            print("State file reset.")
-        else:
-            print("No state file to reset.")
-        return
-
-    # Status check only
-    if args.status:
-        show_status()
+    # Show history mode
+    if args.history:
+        print("\n" + "="*70)
+        print("VIX HISTORY")
+        print("="*70)
+        show_history(args.n)
         return
 
     # Run monitor
-    result = run_monitor(
-        force_alert=args.force_alert,
-        dry_run=args.dry_run,
-        skip_market_check=args.skip_market_check
-    )
+    result = run_monitor(status_only=args.status)
 
     # Exit with appropriate code
     if result.get('error'):

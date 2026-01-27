@@ -1,51 +1,50 @@
 #!/usr/bin/env python3
 """
-Earnings Calendar Monitor for Wheel Strategy
+Earnings Calendar Monitor - CSV Export Version
 
-Weekly email alert system that categorizes WHEEL_UNIVERSE stocks by earnings proximity:
+Generates weekly earnings calendar CSV for trade planning and journaling.
+Categorizes WHEEL_UNIVERSE stocks by earnings proximity:
 - AVOID: Earnings <14 days away (do not open new CSPs)
 - CAUTION: Earnings 14-30 days away (monitor closely)
 - SAFE: Earnings >30 days away or no scheduled earnings
 
-Designed to run:
-- Manually: python earnings_monitor.py
-- Cron job: 0 9 * * 0 (every Sunday 9 AM SGT)
+Output:
+- CSV file: reports/earnings/earnings_calendar_YYYY-MM-DD.csv
+- Color-coded console summary
 
-Uses FMP API for earnings calendar data.
-SMTP credentials should be set via environment variables for security.
+Usage:
+    python earnings_monitor.py              # Generate current week's report
+    python earnings_monitor.py --cleanup    # Remove reports older than 10 weeks
+    python earnings_monitor.py --console    # Console output only (no CSV)
 """
 
 import os
 import sys
 import logging
+import csv
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 import requests
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
-# Import universe
-from universe import WHEEL_UNIVERSE
-
-# Import FMP API key
+# Import universe and config
+from universe import WHEEL_UNIVERSE, CAPITAL_REQUIREMENTS, STOCK_METADATA, get_stock_metadata
 from config import FMP_API_KEY
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
-# SMTP Configuration (use environment variables for security)
-SMTP_SERVER = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
-SENDER_EMAIL = os.getenv('SENDER_EMAIL')  # Your Gmail address
-SENDER_PASSWORD = os.getenv('SENDER_PASSWORD')  # App-specific password
-RECIPIENT_EMAIL = os.getenv('RECIPIENT_EMAIL')  # Destination email (defaults to sender)
+# Output directory
+REPORTS_DIR = Path(__file__).parent / 'reports' / 'earnings'
 
 # Earnings categorization thresholds (days)
-AVOID_THRESHOLD = 14  # <14 days = AVOID
+AVOID_THRESHOLD = 14    # <14 days = AVOID
 CAUTION_THRESHOLD = 30  # 14-30 days = CAUTION
-CALENDAR_HORIZON = 45  # Look ahead 45 days
+CALENDAR_HORIZON = 45   # Look ahead 45 days
+
+# Retention policy
+RETENTION_DAYS = 70  # Keep reports for 10 weeks
 
 # Logging configuration
 logging.basicConfig(
@@ -64,17 +63,13 @@ def fetch_earnings_for_ticker(ticker: str) -> Optional[str]:
     """
     Fetch next FUTURE earnings date for a single ticker using FMP stable API.
 
-    Uses the same endpoint pattern as fmp_data_fetcher.py which works
-    on the Starter plan.
-
     Args:
         ticker: Stock ticker symbol
 
     Returns:
         Earnings date string (YYYY-MM-DD) or None if not found/no future earnings
     """
-    # Use stable API endpoint (same as fmp_data_fetcher.py)
-    url = f"https://financialmodelingprep.com/stable/earnings-calendar"
+    url = "https://financialmodelingprep.com/stable/earnings-calendar"
     params = {
         'symbol': ticker,
         'apikey': FMP_API_KEY
@@ -88,27 +83,19 @@ def fetch_earnings_for_ticker(ticker: str) -> Optional[str]:
         data = response.json()
 
         if data and len(data) > 0:
-            # Look for FUTURE earnings dates (FMP may return multiple or past dates)
+            # Look for FUTURE earnings dates
             for event in data:
                 date_str = event.get('date')
                 if date_str:
                     try:
                         earnings_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                        # Only return future dates (tomorrow or later)
                         if earnings_date > today:
                             return date_str
                     except ValueError:
                         continue
-
-            # If all dates are in the past, return None (no upcoming earnings)
-            logger.debug(f"{ticker}: All earnings dates are in the past")
             return None
-
         return None
 
-    except requests.exceptions.HTTPError as e:
-        logger.debug(f"HTTP error for {ticker}: {e.response.status_code}")
-        return None
     except Exception as e:
         logger.debug(f"Error fetching earnings for {ticker}: {e}")
         return None
@@ -140,7 +127,6 @@ def fetch_earnings_batch(tickers: List[str], delay: float = 0.5) -> Dict[str, st
         if date:
             earnings_map[ticker] = date
 
-        # Rate limiting
         if i < total:
             time.sleep(delay)
 
@@ -152,491 +138,263 @@ def fetch_earnings_batch(tickers: List[str], delay: float = 0.5) -> Dict[str, st
 # CATEGORIZATION LOGIC
 # =============================================================================
 
-def categorize_earnings(universe: List[str]) -> Tuple[List[Tuple], List[Tuple], List[Tuple]]:
+def categorize_earnings(universe: List[str]) -> List[Dict]:
     """
-    Categorize universe stocks by earnings proximity.
+    Categorize all universe stocks by earnings proximity.
 
     Args:
         universe: List of ticker symbols
 
     Returns:
-        Tuple of (avoid_list, caution_list, safe_list)
-        Each list contains tuples: (ticker, date_str, days_away)
-        - avoid_list: <14 days (DO NOT open new CSPs)
-        - caution_list: 14-30 days (monitor closely)
-        - safe_list: >30 days or no earnings scheduled
+        List of dicts with full stock data and earnings status
     """
     today = datetime.now()
 
-    # Fetch earnings for each ticker individually (works on Starter plan)
+    print(f"\n   Scanning earnings from {today.strftime('%Y-%m-%d')} to {(today + timedelta(days=CALENDAR_HORIZON)).strftime('%Y-%m-%d')}...")
+
+    # Fetch earnings for each ticker
     universe_earnings = fetch_earnings_batch(universe, delay=0.5)
 
-    # Categorize each ticker
-    avoid_list: List[Tuple] = []     # <14 days
-    caution_list: List[Tuple] = []   # 14-30 days
-    safe_list: List[Tuple] = []      # >30 days or no earnings
+    # Build full dataset with metadata
+    results = []
 
     for ticker in sorted(universe):
+        metadata = get_stock_metadata(ticker)
+
         if ticker in universe_earnings:
             date_str = universe_earnings[ticker]
             try:
                 earnings_date = datetime.strptime(date_str, '%Y-%m-%d')
                 days_away = (earnings_date - today).days
 
-                # Future earnings categorization
+                # Determine status
                 if days_away < AVOID_THRESHOLD:
-                    avoid_list.append((ticker, date_str, days_away))
+                    status = 'AVOID'
+                    notes = 'Earnings within 14-day buffer - DO NOT open new CSPs'
                 elif days_away < CAUTION_THRESHOLD:
-                    caution_list.append((ticker, date_str, days_away))
+                    status = 'CAUTION'
+                    notes = 'Monitor closely - may enter AVOID zone'
                 else:
-                    safe_list.append((ticker, date_str, days_away))
-            except ValueError as e:
-                logger.warning(f"Invalid date format for {ticker}: {date_str}")
-                safe_list.append((ticker, f"Invalid date: {date_str}", None))
+                    status = 'SAFE'
+                    notes = 'Clear to trade'
+
+                results.append({
+                    'ticker': ticker,
+                    'company': metadata['company'],
+                    'sector': metadata['sector'],
+                    'quality_score': metadata['quality_score'],
+                    'capital_required': metadata['capital_required'],
+                    'earnings_date': date_str,
+                    'days_away': days_away,
+                    'status': status,
+                    'notes': notes
+                })
+
+            except ValueError:
+                results.append({
+                    'ticker': ticker,
+                    'company': metadata['company'],
+                    'sector': metadata['sector'],
+                    'quality_score': metadata['quality_score'],
+                    'capital_required': metadata['capital_required'],
+                    'earnings_date': date_str,
+                    'days_away': '',
+                    'status': 'SAFE',
+                    'notes': f'Invalid date format: {date_str}'
+                })
         else:
-            # No FUTURE earnings found - safe to trade
-            safe_list.append((ticker, "No upcoming earnings scheduled", None))
+            # No future earnings found
+            results.append({
+                'ticker': ticker,
+                'company': metadata['company'],
+                'sector': metadata['sector'],
+                'quality_score': metadata['quality_score'],
+                'capital_required': metadata['capital_required'],
+                'earnings_date': '',
+                'days_away': '',
+                'status': 'SAFE',
+                'notes': 'No earnings in next 45 days'
+            })
 
-    # Sort by days away (closest first for avoid/caution)
-    avoid_list.sort(key=lambda x: x[2] if x[2] is not None else 999)
-    caution_list.sort(key=lambda x: x[2] if x[2] is not None else 999)
-
-    return avoid_list, caution_list, safe_list
+    return results
 
 
 # =============================================================================
-# EMAIL GENERATION
+# CSV EXPORT
 # =============================================================================
 
-def generate_html_email(
-    avoid: List[Tuple],
-    caution: List[Tuple],
-    safe: List[Tuple],
-    api_error: Optional[str] = None
-) -> str:
+def export_to_csv(data: List[Dict], report_date: str) -> Path:
     """
-    Generate HTML email body.
+    Export earnings data to CSV.
 
     Args:
-        avoid: List of (ticker, date, days) for <14 days
-        caution: List of (ticker, date, days) for 14-30 days
-        safe: List of (ticker, date, days) for >30 days
-        api_error: Optional error message if API failed
+        data: List of stock data dicts
+        report_date: Date string for filename (YYYY-MM-DD)
 
     Returns:
-        HTML string
+        Path to created CSV file
     """
-    today = datetime.now()
-    today_str = today.strftime('%b %d, %Y')
-    week_of = today.strftime('%b %d')
+    # Ensure reports directory exists
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }}
-        h1 {{
-            color: #1a1a1a;
-            border-bottom: 2px solid #4CAF50;
-            padding-bottom: 10px;
-        }}
-        h2 {{
-            color: #333;
-            margin-top: 30px;
-        }}
-        table {{
-            border-collapse: collapse;
-            width: 100%;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        th {{
-            background-color: #4a4a4a;
-            color: white;
-            padding: 12px 15px;
-            text-align: left;
-            font-weight: 600;
-        }}
-        td {{
-            padding: 10px 15px;
-            border-bottom: 1px solid #ddd;
-        }}
-        tr:hover {{ background-color: #f5f5f5; }}
-        .avoid {{ background-color: #ffebee; }}
-        .avoid th {{ background-color: #d32f2f; }}
-        .caution {{ background-color: #fff8e1; }}
-        .caution th {{ background-color: #ff8f00; }}
-        .safe {{ background-color: #e8f5e9; }}
-        .safe th {{ background-color: #388e3c; }}
-        .safe-list {{
-            list-style-type: none;
-            padding: 0;
-        }}
-        .safe-list li {{
-            padding: 8px 15px;
-            background-color: #e8f5e9;
-            margin-bottom: 5px;
-            border-radius: 4px;
-        }}
-        .ticker {{ font-weight: bold; color: #1976d2; }}
-        .days {{ color: #666; }}
-        .error {{
-            background-color: #ffcdd2;
-            border: 1px solid #ef5350;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-        }}
-        .summary {{
-            background-color: #f5f5f5;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-        }}
-        .footer {{
-            color: #666;
-            font-size: 12px;
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
-        }}
-    </style>
-</head>
-<body>
-    <h1>Earnings Alert - Week of {week_of}</h1>
-    <p>Generated: {today_str}</p>
-"""
+    filename = f"earnings_calendar_{report_date}.csv"
+    filepath = REPORTS_DIR / filename
 
-    # API error warning
-    if api_error:
-        html += f"""
-    <div class="error">
-        <strong>API Error:</strong> {api_error}<br>
-        <em>Data below may be incomplete or cached. Verify manually before trading.</em>
-    </div>
-"""
+    fieldnames = [
+        'ticker',
+        'company',
+        'sector',
+        'quality_score',
+        'capital_required',
+        'earnings_date',
+        'days_away',
+        'status',
+        'notes'
+    ]
 
-    # Summary section
-    html += f"""
-    <div class="summary">
-        <strong>Summary:</strong>
-        {len(avoid)} stocks to AVOID |
-        {len(caution)} stocks with CAUTION |
-        {len(safe)} stocks SAFE to trade
-    </div>
-"""
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(data)
+
+    logger.info(f"Exported to: {filepath}")
+    return filepath
+
+
+# =============================================================================
+# CONSOLE OUTPUT
+# =============================================================================
+
+def print_summary(data: List[Dict]):
+    """
+    Print color-coded console summary.
+    """
+    avoid = [d for d in data if d['status'] == 'AVOID']
+    caution = [d for d in data if d['status'] == 'CAUTION']
+    safe = [d for d in data if d['status'] == 'SAFE']
+
+    print("\n" + "="*70)
+    print("EARNINGS CALENDAR SUMMARY")
+    print("="*70)
 
     # AVOID section
-    html += """
-    <h2>AVOID NEW CSPs (Earnings &lt;14 days)</h2>
-"""
-
+    print(f"\n   AVOID NEW CSPs ({len(avoid)} stocks)")
     if avoid:
-        html += """
-    <table class="avoid">
-        <tr><th>Ticker</th><th>Earnings Date</th><th>Days Away</th></tr>
-"""
-        for ticker, date_str, days in avoid:
-            html += f"""        <tr>
-            <td class="ticker">{ticker}</td>
-            <td>{date_str}</td>
-            <td class="days">{days} days</td>
-        </tr>
-"""
-        html += "    </table>\n"
+        print("   " + "-"*50)
+        print(f"   {'Ticker':<8} {'Date':<12} {'Days':>5}  {'Sector':<20}")
+        print("   " + "-"*50)
+        for stock in sorted(avoid, key=lambda x: x.get('days_away', 999)):
+            days = stock.get('days_away', 'N/A')
+            print(f"   {stock['ticker']:<8} {stock['earnings_date']:<12} {days:>5}  {stock['sector']:<20}")
     else:
-        html += """    <p style="color: #388e3c;">No stocks with earnings &lt;14 days. All clear!</p>
-"""
+        print("   All clear - no earnings <14 days!")
 
     # CAUTION section
-    html += """
-    <h2>CAUTION (Earnings 14-30 days)</h2>
-"""
-
+    print(f"\n   CAUTION ({len(caution)} stocks)")
     if caution:
-        html += """
-    <table class="caution">
-        <tr><th>Ticker</th><th>Earnings Date</th><th>Days Away</th></tr>
-"""
-        for ticker, date_str, days in caution:
-            html += f"""        <tr>
-            <td class="ticker">{ticker}</td>
-            <td>{date_str}</td>
-            <td class="days">{days} days</td>
-        </tr>
-"""
-        html += "    </table>\n"
+        print("   " + "-"*50)
+        print(f"   {'Ticker':<8} {'Date':<12} {'Days':>5}  {'Sector':<20}")
+        print("   " + "-"*50)
+        for stock in sorted(caution, key=lambda x: x.get('days_away', 999)):
+            days = stock.get('days_away', 'N/A')
+            print(f"   {stock['ticker']:<8} {stock['earnings_date']:<12} {days:>5}  {stock['sector']:<20}")
     else:
-        html += "    <p>No stocks in caution zone.</p>\n"
+        print("   None")
 
     # SAFE section
-    html += """
-    <h2>SAFE TO TRADE (&gt;30 days or no earnings scheduled)</h2>
-    <ul class="safe-list">
-"""
+    print(f"\n   SAFE TO TRADE ({len(safe)} stocks)")
+    safe_tickers = [s['ticker'] for s in safe]
+    # Print in rows of 10
+    for i in range(0, len(safe_tickers), 10):
+        print(f"   {', '.join(safe_tickers[i:i+10])}")
 
-    for ticker, date_info, days in safe:
-        if days is not None:
-            html += f"""        <li><span class="ticker">{ticker}</span> - Earnings: {date_info} ({days} days)</li>
-"""
-        else:
-            html += f"""        <li><span class="ticker">{ticker}</span> - {date_info}</li>
-"""
-
-    html += """    </ul>
-"""
-
-    # Footer
-    html += f"""
-    <div class="footer">
-        <p>
-            Generated automatically by <strong>earnings_monitor.py</strong><br>
-            Data source: Financial Modeling Prep (FMP) API<br>
-            Universe size: {len(WHEEL_UNIVERSE)} stocks<br>
-            Calendar horizon: {CALENDAR_HORIZON} days<br>
-            Thresholds: AVOID &lt;{AVOID_THRESHOLD} days | CAUTION &lt;{CAUTION_THRESHOLD} days
-        </p>
-        <p><em>Note: Always verify earnings dates before trading. Dates may change.</em></p>
-    </div>
-</body>
-</html>
-"""
-
-    return html
-
-
-def generate_plain_text_email(
-    avoid: List[Tuple],
-    caution: List[Tuple],
-    safe: List[Tuple],
-    api_error: Optional[str] = None
-) -> str:
-    """
-    Generate plain text email body (fallback).
-
-    Args:
-        avoid: List of (ticker, date, days) for <14 days
-        caution: List of (ticker, date, days) for 14-30 days
-        safe: List of (ticker, date, days) for >30 days
-        api_error: Optional error message if API failed
-
-    Returns:
-        Plain text string
-    """
-    today = datetime.now()
-    today_str = today.strftime('%b %d, %Y')
-
-    text = f"""EARNINGS ALERT - Week of {today.strftime('%b %d')}
-Generated: {today_str}
-{'='*60}
-
-"""
-
-    if api_error:
-        text += f"""WARNING: API Error - {api_error}
-Data below may be incomplete. Verify manually before trading.
-
-"""
-
-    text += f"""SUMMARY: {len(avoid)} AVOID | {len(caution)} CAUTION | {len(safe)} SAFE
-
-"""
-
-    # AVOID
-    text += """AVOID NEW CSPs (Earnings <14 days)
-{'-'*40}
-"""
-    if avoid:
-        for ticker, date_str, days in avoid:
-            text += f"  {ticker:6} - {date_str} ({days} days)\n"
-    else:
-        text += "  No stocks to avoid. All clear!\n"
-
-    text += "\n"
-
-    # CAUTION
-    text += """CAUTION (Earnings 14-30 days)
-{'-'*40}
-"""
-    if caution:
-        for ticker, date_str, days in caution:
-            text += f"  {ticker:6} - {date_str} ({days} days)\n"
-    else:
-        text += "  None\n"
-
-    text += "\n"
-
-    # SAFE
-    text += """SAFE TO TRADE (>30 days or no earnings)
-{'-'*40}
-"""
-    for ticker, date_info, days in safe:
-        if days is not None:
-            text += f"  {ticker:6} - {date_info} ({days} days)\n"
-        else:
-            text += f"  {ticker:6} - {date_info}\n"
-
-    text += f"""
-
-{'='*60}
-Generated by earnings_monitor.py
-Data source: FMP API | Universe: {len(WHEEL_UNIVERSE)} stocks
-"""
-
-    return text
+    print("\n" + "="*70)
 
 
 # =============================================================================
-# EMAIL SENDING
+# CLEANUP
 # =============================================================================
 
-def send_email(subject: str, html_body: str, text_body: str) -> bool:
+def cleanup_old_reports():
     """
-    Send email via SMTP (Gmail by default).
-
-    Args:
-        subject: Email subject line
-        html_body: HTML content
-        text_body: Plain text fallback
+    Remove reports older than RETENTION_DAYS.
 
     Returns:
-        True if sent successfully, False otherwise
+        Number of files deleted
     """
-    if not SENDER_EMAIL or not SENDER_PASSWORD:
-        logger.error(
-            "Email credentials not configured.\n"
-            "Set environment variables:\n"
-            "  export SENDER_EMAIL='your-email@gmail.com'\n"
-            "  export SENDER_PASSWORD='your-app-specific-password'\n"
-            "  export RECIPIENT_EMAIL='destination@email.com' (optional)\n\n"
-            "For Gmail, create an app-specific password:\n"
-            "  https://support.google.com/accounts/answer/185833"
-        )
-        return False
+    if not REPORTS_DIR.exists():
+        return 0
 
-    recipient = RECIPIENT_EMAIL or SENDER_EMAIL
+    cutoff_date = datetime.now() - timedelta(days=RETENTION_DAYS)
+    deleted_count = 0
 
-    # Create multipart message (HTML + plain text fallback)
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = subject
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = recipient
+    for filepath in REPORTS_DIR.glob('earnings_calendar_*.csv'):
+        try:
+            # Parse date from filename: earnings_calendar_YYYY-MM-DD.csv
+            date_str = filepath.stem.replace('earnings_calendar_', '')
+            file_date = datetime.strptime(date_str, '%Y-%m-%d')
 
-    # Attach both versions (email client will use preferred format)
-    msg.attach(MIMEText(text_body, 'plain'))
-    msg.attach(MIMEText(html_body, 'html'))
+            if file_date < cutoff_date:
+                filepath.unlink()
+                deleted_count += 1
+                logger.info(f"Deleted old report: {filepath.name}")
 
-    try:
-        logger.info(f"Connecting to SMTP server {SMTP_SERVER}:{SMTP_PORT}...")
+        except (ValueError, IndexError):
+            continue
 
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
+    if deleted_count > 0:
+        print(f"\n   Cleaned up {deleted_count} old reports (>{RETENTION_DAYS} days)")
 
-        logger.info(f"Email sent successfully to {recipient}")
-        return True
-
-    except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"SMTP authentication failed: {e}")
-        logger.error("Check your SENDER_EMAIL and SENDER_PASSWORD environment variables")
-        return False
-
-    except smtplib.SMTPException as e:
-        logger.error(f"SMTP error: {e}")
-        return False
-
-    except Exception as e:
-        logger.error(f"Failed to send email: {e}")
-        return False
+    return deleted_count
 
 
 # =============================================================================
 # MAIN EXECUTION
 # =============================================================================
 
-def run_monitor(dry_run: bool = False, console_only: bool = False) -> Dict:
+def run_monitor(console_only: bool = False) -> Dict:
     """
     Run the earnings monitor.
 
     Args:
-        dry_run: If True, don't send email (just print summary)
-        console_only: If True, print to console and skip email
+        console_only: If True, skip CSV export
 
     Returns:
-        Dict with results: {'avoid': [...], 'caution': [...], 'safe': [...], 'email_sent': bool}
+        Dict with results
     """
-    print("\n" + "="*60)
-    print("EARNINGS CALENDAR MONITOR")
-    print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    report_date = datetime.now().strftime('%Y-%m-%d')
+
+    print("\n" + "="*70)
+    print(f"EARNINGS CALENDAR MONITOR - {report_date}")
     print(f"Universe: {len(WHEEL_UNIVERSE)} stocks")
-    print("="*60 + "\n")
+    print("="*70)
 
     # Categorize earnings
-    api_error = None
-    try:
-        avoid, caution, safe = categorize_earnings(WHEEL_UNIVERSE)
-    except Exception as e:
-        logger.error(f"Error categorizing earnings: {e}")
-        api_error = str(e)
-        avoid, caution, safe = [], [], [(t, "Error - verify manually", None) for t in WHEEL_UNIVERSE]
+    data = categorize_earnings(WHEEL_UNIVERSE)
 
-    # Print summary to console
-    print(f"AVOID ({len(avoid)} stocks):")
-    if avoid:
-        for ticker, date_str, days in avoid:
-            print(f"  {ticker:6} - {date_str} ({days} days)")
-    else:
-        print("  None - all clear!")
+    # Export to CSV
+    filepath = None
+    if not console_only:
+        filepath = export_to_csv(data, report_date)
 
-    print(f"\nCAUTION ({len(caution)} stocks):")
-    if caution:
-        for ticker, date_str, days in caution:
-            print(f"  {ticker:6} - {date_str} ({days} days)")
-    else:
-        print("  None")
+    # Print summary
+    print_summary(data)
 
-    print(f"\nSAFE ({len(safe)} stocks)")
+    # Cleanup old files
+    cleanup_old_reports()
 
-    # Generate email content
-    today = datetime.now().strftime('%b %d')
-    subject = f"Earnings Alert - Week of {today}"
+    if filepath:
+        print(f"\n   Report saved: {filepath}")
+        print(f"   Use this file when journaling trades to document earnings proximity")
 
-    html_body = generate_html_email(avoid, caution, safe, api_error)
-    text_body = generate_plain_text_email(avoid, caution, safe, api_error)
-
-    # Send email (unless dry run or console only)
-    email_sent = False
-
-    if dry_run:
-        print("\n[DRY RUN] Email would be sent with subject:")
-        print(f"  {subject}")
-        print("\n[DRY RUN] Skipping email send.")
-    elif console_only:
-        print("\n[CONSOLE ONLY] Skipping email send.")
-    else:
-        print("\nSending email...")
-        email_sent = send_email(subject, html_body, text_body)
-
-    print("\n" + "="*60)
-    print("Monitor complete.")
-    print("="*60 + "\n")
+    print("\n" + "="*70 + "\n")
 
     return {
-        'avoid': avoid,
-        'caution': caution,
-        'safe': safe,
-        'email_sent': email_sent,
-        'api_error': api_error
+        'data': data,
+        'filepath': filepath,
+        'avoid_count': len([d for d in data if d['status'] == 'AVOID']),
+        'caution_count': len([d for d in data if d['status'] == 'CAUTION']),
+        'safe_count': len([d for d in data if d['status'] == 'SAFE'])
     }
 
 
@@ -645,40 +403,33 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Earnings Calendar Monitor - Weekly email alerts for Wheel Strategy'
+        description='Earnings Calendar Monitor - CSV Export Version'
     )
     parser.add_argument(
-        '--dry-run',
+        '--cleanup',
         action='store_true',
-        help='Print summary without sending email'
+        help='Remove old reports only (no new report generated)'
     )
     parser.add_argument(
-        '--console-only',
+        '--console',
         action='store_true',
-        help='Print to console only (no email)'
-    )
-    parser.add_argument(
-        '--save-html',
-        type=str,
-        metavar='FILE',
-        help='Save HTML email to file (for testing)'
+        help='Console output only (no CSV export)'
     )
 
     args = parser.parse_args()
 
-    # Run monitor
-    result = run_monitor(dry_run=args.dry_run, console_only=args.console_only)
+    # Handle cleanup-only mode
+    if args.cleanup:
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        deleted = cleanup_old_reports()
+        if deleted == 0:
+            print("No old reports to clean up.")
+        return
 
-    # Optionally save HTML to file
-    if args.save_html:
-        html = generate_html_email(result['avoid'], result['caution'], result['safe'], result['api_error'])
-        with open(args.save_html, 'w', encoding='utf-8') as f:
-            f.write(html)
-        print(f"HTML saved to: {args.save_html}")
+    # Run monitor
+    result = run_monitor(console_only=args.console)
 
     # Exit with appropriate code
-    if result.get('api_error'):
-        sys.exit(1)
     sys.exit(0)
 
 
