@@ -2001,6 +2001,265 @@ class TradeJournal:
         logger.info(f"Journal exported to {filepath}")
 
 
+    # =========================================================================
+    # SECTOR EXPOSURE TRACKING (Option B Compromise - Jan 2026)
+    # =========================================================================
+
+    def get_sector_exposure(self) -> Dict[str, Dict]:
+        """
+        Calculate current sector exposure across all open positions.
+
+        Returns:
+            Dict mapping sector to exposure metrics:
+            {
+                'Technology': {
+                    'positions': 2,
+                    'capital_deployed': 14500,
+                    'pct_of_capital': 32.6,
+                    'tickers': ['MSFT', 'GOOGL']
+                },
+                'Financial Services': {
+                    'positions': 1,
+                    'capital_deployed': 7000,
+                    'pct_of_capital': 15.7,
+                    'tickers': ['V']
+                },
+                ...
+            }
+
+        Example usage:
+            exposure = journal.get_sector_exposure()
+            tech_pct = exposure.get('Technology', {}).get('pct_of_capital', 0)
+            if tech_pct > 40:
+                print("Warning: Tech exposure above 40%")
+        """
+        open_trades = self.df[self.df['status'] == 'OPEN']
+
+        if open_trades.empty:
+            return {}
+
+        sector_exposure = {}
+
+        # Group by sector and calculate metrics
+        for sector in open_trades['sector'].unique():
+            sector_trades = open_trades[open_trades['sector'] == sector]
+
+            total_capital = sector_trades['capital_deployed'].sum()
+            pct_of_capital = (total_capital / self.total_capital) * 100
+
+            sector_exposure[sector] = {
+                'positions': len(sector_trades),
+                'capital_deployed': float(total_capital),
+                'pct_of_capital': round(float(pct_of_capital), 1),
+                'tickers': sector_trades['ticker'].tolist()
+            }
+
+        return sector_exposure
+
+    def check_sector_limits(
+        self,
+        new_ticker: str,
+        new_sector: str,
+        new_capital: float
+    ) -> Tuple[bool, str]:
+        """
+        Check if adding a new position would violate sector exposure limits.
+
+        Enforces POSITION_SECTOR_LIMITS from config.py:
+        - Max 40% capital per sector
+        - Max 3 positions per sector
+
+        Args:
+            new_ticker: Ticker symbol for proposed trade
+            new_sector: Sector of proposed trade (e.g., 'Technology')
+            new_capital: Capital required for proposed trade (strike × 100)
+
+        Returns:
+            Tuple of (can_deploy, reason)
+            - can_deploy: True if within limits, False if violation
+            - reason: Human-readable explanation
+
+        Example:
+            can_deploy, reason = journal.check_sector_limits('NVDA', 'Technology', 7000)
+            if not can_deploy:
+                print(f"Cannot deploy: {reason}")
+            else:
+                # Proceed with trade
+                journal.log_entry(...)
+        """
+        try:
+            from config import POSITION_SECTOR_LIMITS
+        except ImportError:
+            # If config doesn't have POSITION_SECTOR_LIMITS, use defaults
+            POSITION_SECTOR_LIMITS = {
+                'max_sector_exposure_pct': 0.40,
+                'max_positions_per_sector': 3,
+                'warn_sector_exposure_pct': 0.35,
+                'warn_positions_per_sector': 2,
+            }
+
+        # Get current sector exposure
+        sector_exposure = self.get_sector_exposure()
+
+        # Extract limits
+        max_positions = POSITION_SECTOR_LIMITS.get('max_positions_per_sector', 3)
+        warn_positions = POSITION_SECTOR_LIMITS.get('warn_positions_per_sector', 2)
+        max_exposure_pct = POSITION_SECTOR_LIMITS.get('max_sector_exposure_pct', 0.40)
+        warn_exposure_pct = POSITION_SECTOR_LIMITS.get('warn_sector_exposure_pct', 0.35)
+
+        # Check 1: Position count limit
+        current_positions = sector_exposure.get(new_sector, {}).get('positions', 0)
+
+        if current_positions >= max_positions:
+            return (
+                False,
+                f"REJECTED: Already have {current_positions} {new_sector} positions (max {max_positions})"
+            )
+
+        # Check 2: Capital exposure limit
+        current_capital = sector_exposure.get(new_sector, {}).get('capital_deployed', 0)
+        new_total_capital = current_capital + new_capital
+        new_exposure_pct = (new_total_capital / self.total_capital)
+
+        if new_exposure_pct > max_exposure_pct:
+            current_pct = (current_capital / self.total_capital) * 100
+            new_pct = new_exposure_pct * 100
+            return (
+                False,
+                f"REJECTED: Would create {new_pct:.1f}% {new_sector} exposure "
+                f"(current: {current_pct:.1f}%, max: {max_exposure_pct*100:.0f}%)"
+            )
+
+        # Passed all checks - generate status message
+        warnings = []
+
+        # Warning: Approaching position limit
+        if current_positions + 1 >= warn_positions:
+            warnings.append(f"WARN: Will have {current_positions + 1} {new_sector} positions")
+
+        # Warning: Approaching exposure limit
+        if new_exposure_pct >= warn_exposure_pct:
+            warnings.append(
+                f"WARN: {new_sector} exposure will be {new_exposure_pct*100:.1f}% "
+                f"(approaching {max_exposure_pct*100:.0f}% limit)"
+            )
+
+        # Return with appropriate message
+        if warnings:
+            return (True, " | ".join(warnings))
+        else:
+            return (
+                True,
+                f"OK: {new_sector} exposure will be {new_exposure_pct*100:.1f}% "
+                f"({current_positions + 1} position{'s' if current_positions + 1 > 1 else ''})"
+            )
+
+    def print_sector_exposure_report(self) -> None:
+        """
+        Print formatted report of current sector exposure.
+
+        Displays:
+        - Sector-by-sector breakdown (positions, capital, % of portfolio)
+        - Tickers in each sector
+        - Visual flags for limits/warnings (LIMIT, WARN)
+        - Total deployed capital
+        - Sector diversity check
+
+        Example output:
+        ======================================================================
+        SECTOR EXPOSURE REPORT
+        ======================================================================
+        Sector                    Positions    Capital         % of Capital
+        ----------------------------------------------------------------------
+        Technology                3            $21,000         44.7%   WARN
+          -> MSFT, GOOGL, TSM
+        Financial Services        1            $ 7,000         14.9%
+          -> V
+        ----------------------------------------------------------------------
+        TOTAL DEPLOYED            4            $28,000         59.6%
+
+        Active sectors: 2   (min 3 required)
+        ======================================================================
+        """
+        try:
+            from config import POSITION_SECTOR_LIMITS
+        except ImportError:
+            POSITION_SECTOR_LIMITS = {
+                'max_sector_exposure_pct': 0.40,
+                'max_positions_per_sector': 3,
+                'warn_sector_exposure_pct': 0.35,
+                'min_active_sectors': 3,
+            }
+
+        sector_exposure = self.get_sector_exposure()
+
+        if not sector_exposure:
+            print("\n  No open positions - sector exposure: 0%")
+            return
+
+        # Extract limits
+        max_exposure_pct = POSITION_SECTOR_LIMITS.get('max_sector_exposure_pct', 0.40)
+        warn_exposure_pct = POSITION_SECTOR_LIMITS.get('warn_sector_exposure_pct', 0.35)
+        max_positions = POSITION_SECTOR_LIMITS.get('max_positions_per_sector', 3)
+        min_sectors = POSITION_SECTOR_LIMITS.get('min_active_sectors', 3)
+
+        # Print header
+        print(f"\n{'='*70}")
+        print("SECTOR EXPOSURE REPORT (Option B Compromise)")
+        print(f"{'='*70}")
+        print(f"{'Sector':<25} {'Positions':<12} {'Capital':<15} {'% of Capital':<15}")
+        print(f"{'-'*70}")
+
+        # Sort by capital deployed (descending)
+        sorted_sectors = sorted(
+            sector_exposure.items(),
+            key=lambda x: x[1]['capital_deployed'],
+            reverse=True
+        )
+
+        # Print each sector
+        for sector, metrics in sorted_sectors:
+            positions = metrics['positions']
+            capital = metrics['capital_deployed']
+            pct = metrics['pct_of_capital']
+            tickers = ', '.join(metrics['tickers'])
+
+            # Determine status flag
+            flag = ""
+            if pct >= max_exposure_pct * 100:
+                flag = "[LIMIT]"
+            elif pct >= warn_exposure_pct * 100:
+                flag = "[WARN]"
+            elif positions >= max_positions:
+                flag = "[MAX POS]"
+
+            # Print sector summary
+            print(f"{sector:<25} {positions:<12} ${capital:>13,.0f} {pct:>13.1f}%  {flag}")
+
+            # Print tickers (indented)
+            print(f"  -> {tickers}")
+
+        # Print totals
+        print(f"{'-'*70}")
+
+        total_capital = sum(m['capital_deployed'] for m in sector_exposure.values())
+        total_positions = sum(m['positions'] for m in sector_exposure.values())
+        total_pct = (total_capital / self.total_capital) * 100
+
+        print(f"{'TOTAL DEPLOYED':<25} {total_positions:<12} ${total_capital:>13,.0f} {total_pct:>13.1f}%")
+
+        # Sector diversity check
+        active_sectors = len(sector_exposure)
+        print(f"\nActive sectors: {active_sectors} ", end="")
+
+        if active_sectors < min_sectors:
+            print(f"[WARN] (min {min_sectors} required)")
+        else:
+            print(f"[OK] (min {min_sectors})")
+
+        print(f"{'='*70}\n")
+
+
 # =============================================================================
 # CLI INTERFACE
 # =============================================================================
@@ -2016,6 +2275,7 @@ def main() -> None:
         print("\nCommands:")
         print("  stats              - Show performance dashboard")
         print("  open               - Show open positions")
+        print("  sector             - Show sector exposure report (Option B)")
         print("  import <csv_path>  - Import from MooMoo CSV")
         print("  export <filepath>  - Export journal to CSV")
         return
@@ -2026,6 +2286,8 @@ def main() -> None:
         journal.show_stats()
     elif command == "open":
         journal.show_open_positions()
+    elif command == "sector":
+        journal.print_sector_exposure_report()
     elif command == "import":
         if len(sys.argv) < 3:
             print("Usage: python trade_journal.py import <csv_path>")

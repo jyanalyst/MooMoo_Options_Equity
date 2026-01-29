@@ -898,33 +898,36 @@ affordable_under_7k = get_wheel_universe(max_capital=7000)
 **This means:**
 - You can trade stocks up to ~$89/share ($8,900 ÷ 100 shares)
 - Stocks above $89 violate position sizing (MSFT $466, GOOGL $328, TSM $335, etc.)
-- **Focus on the affordable tier of the universe**
+- **Focus on the affordable portion of the universe**
 
 ---
 
-### Three-Tier Capital Filtering
+### Capital-Based Universe Filtering
 
 **Use the built-in capital filtering function:**
 
 ```python
 from universe import get_wheel_universe
 
-# Tier 1: Primary targets (under $90)
-tier_1 = get_wheel_universe(max_capital=9000)
+# Primary targets: Stocks under $90 (≤$9,000 capital per contract)
+# Recommended for 15-20% position sizing on $44.5k account
+primary_targets = get_wheel_universe(max_capital=9000)
 
-# Tier 2: Stretch targets ($90-150)
-tier_2 = get_wheel_universe(max_capital=15000)
+# Stretch targets: Stocks $90-150 (≤$15,000 capital)
+# Requires larger position sizes (20-35% of account)
+stretch_targets = get_wheel_universe(max_capital=15000)
 
-# Tier 3: Full universe (requires larger positions)
-tier_3 = get_wheel_universe()
+# Full universe: All quality stocks
+# Only if you have $50k+ account or can handle concentrated positions
+full_universe = get_wheel_universe()
 ```
 
 ---
 
-#### **Tier 1: Primary Targets (Under $90/share)**
+#### **Primary Targets: Stocks Under $90/share (≤$9,000 Capital)**
 
-**Capital per position: $3,700-10,800**  
-**Position size: 8-24% of account** ✓  
+**Capital per position: $3,700-10,800**
+**Position size: 8-24% of account** ✓
 **Number of stocks: 11**
 
 ```
@@ -979,10 +982,10 @@ Defensive: 75% (MNST, MRK, IBKR)
 
 ---
 
-#### **Tier 2: Stretch Targets ($90-150/share)**
+#### **Stretch Targets: Stocks $90-150/share (≤$15,000 Capital)**
 
-**Capital per position: $10,000-22,000**  
-**Position size: 22-49% of account** ⚠️  
+**Capital per position: $10,000-22,000**
+**Position size: 22-49% of account** ⚠️
 **Number of stocks: 7 additional (18 total)**
 
 ```
@@ -997,7 +1000,7 @@ PDD     $106    $10,600  Consumer Cyclical   38.8    E-commerce (China risk)
 DOV     $207    $20,700  Industrials         56.5    Diversified industrial
 ```
 
-**Tier 2 trade-offs:**
+**Stretch target trade-offs:**
 - **PG at $150:** 34% of account for ONE position (violates 20% rule)
   - Only trade if account grows to $75K+ (then $15K = 20%)
   - Or use fractional shares / options spreads (not CSP)
@@ -1005,14 +1008,14 @@ DOV     $207    $20,700  Industrials         56.5    Diversified industrial
 - **LRCX at $218:** 49% of account (severe violation)
   - Skip until account reaches $110K+
 
-**Recommendation:** **Skip Tier 2 until account reaches $75K+**
+**Recommendation:** **Skip stretch targets until account reaches $75K+**
 
 ---
 
-#### **Tier 3: Institutional Tier ($150+ /share)**
+#### **Advanced Targets: Premium Stocks $150+/share (>$15,000 Capital)**
 
-**Capital per position: $21,000-53,000**  
-**Position size: 47-119% of account** 🚫  
+**Capital per position: $21,000-53,000**
+**Position size: 47-119% of account** 🚫
 **Number of stocks: 10 (all high-quality, all unaffordable)**
 
 ```
@@ -1041,7 +1044,7 @@ TT      $386    $38,600   Industrials         56.3    87% of account
 
 ### Recommended Starting Portfolio
 
-**For $44,500 account, focus on Tier 1 (11 stocks under $90):**
+**For $44,500 account, focus on primary targets (11 stocks under $90):**
 
 **Starter Portfolio (Conservative):**
 ```
@@ -1064,7 +1067,7 @@ Position 5: MNST $ 8,200 (14% of $60K) - Consumer Defensive, high margins
 Position 6: NFLX $ 8,600 (14% of $60K) - Communications, growth
 ```
 
-**As account grows to $100K+, add Tier 3:**
+**As account grows to $100K+, add advanced targets:**
 ```
 Position 7: GOOGL $32,800 (33% of $100K) - Technology, elite quality
 Position 8: V     $32,600 (33% of $100K) - Financial Services, payments monopoly
@@ -1077,37 +1080,37 @@ Position 8: V     $32,600 (33% of $100K) - Financial Services, payments monopoly
 **Target: Grow from $44.5K → $100K in 24-36 months**
 
 **Strategy:**
-1. **Start with 4 Tier 1 positions** (MRK, KO, IBKR, EW)
+1. **Start with 4 primary positions** (MRK, KO, IBKR, EW)
 2. **Target 12-18% annual return** from Wheel strategy
 3. **Reinvest profits** into account (don't withdraw)
 4. **Add positions as account grows:**
 
 ```
-Account Size  | Affordable Tier 1 | Affordable Tier 2 | Affordable Tier 3
-------------- | ----------------- | ----------------- | -----------------
-$44.5K (now)  | 11 stocks         | 0 stocks          | 0 stocks
-$60K          | 11 stocks         | 5 stocks          | 0 stocks
-$75K          | 11 stocks         | 7 stocks          | 2 stocks
-$100K         | 11 stocks         | 7 stocks          | 6 stocks
-$150K         | All 28 stocks     | All 28 stocks     | All 28 stocks
+Account Size  | Primary (<$90)  | Stretch ($90-150) | Advanced (>$150)
+------------- | --------------- | ----------------- | ----------------
+$44.5K (now)  | 11 stocks       | 0 stocks          | 0 stocks
+$60K          | 11 stocks       | 5 stocks          | 0 stocks
+$75K          | 11 stocks       | 7 stocks          | 2 stocks
+$100K         | 11 stocks       | 7 stocks          | 6 stocks
+$150K         | All 28 stocks   | All 28 stocks     | All 28 stocks
 ```
 
 **Timeline:**
 ```
 Year 1 (2026): $44.5K → $50K (+12% return)
-  ↳ Trade: MRK, KO, IBKR, EW (Tier 1 only)
+  ↳ Trade: MRK, KO, IBKR, EW (primary targets only)
   ↳ Focus: Build experience, refine exit rules
 
 Year 2 (2027): $50K → $59K (+18% return, improved execution)
-  ↳ Add: MNST, NFLX (still Tier 1)
+  ↳ Add: MNST, NFLX (still primary targets)
   ↳ Focus: Scale to 6 positions, optimize VIX timing
 
 Year 3 (2028): $59K → $75K (+27% return, aggressive VIX >25 deployment)
-  ↳ Add: PG (Tier 2), LRCX (Tier 3)
+  ↳ Add: PG (stretch), LRCX (advanced)
   ↳ Focus: Full 8-position portfolio
 
 Year 4 (2029): $75K → $100K (+33% return, compounding effect)
-  ↳ Add: GOOGL, V, MSFT (Tier 3)
+  ↳ Add: GOOGL, V, MSFT (advanced targets)
   ↳ Milestone: Full universe now accessible
 ```
 
@@ -1116,6 +1119,229 @@ Year 4 (2029): $75K → $100K (+33% return, compounding effect)
 - All profits reinvested (no withdrawals)
 - VIX >20 deployment capitalized on (aggressive sizing during spikes)
 - Steady execution (no emotional trading, follow rules)
+
+---
+
+## SECTOR EXPOSURE MANAGEMENT (Option B Compromise)
+
+### Universe Design Philosophy
+
+**Implemented: January 2026**
+
+The Options Scanner uses a **two-tier approach** to sector diversification:
+1. **Soft caps at UNIVERSE level** (35% max per sector)
+2. **Hard caps at POSITION level** (40% max per sector, 3 positions max)
+
+This reflects **options market reality** while maintaining **portfolio risk management**.
+
+---
+
+### Why Soft Universe Caps?
+
+**Market Reality**: Technology sector has superior options characteristics:
+- Weekly expirations: More 30-45 DTE opportunities
+- High volume: >500K shares/day on most names
+- Tight spreads: Bid-ask typically <5% of mid price
+- High IV Ranks: More frequent >50% IV Rank environments
+- Liquid options: Volume >1000 contracts/day on ATM strikes
+
+**Other sectors** (Consumer Defensive, Healthcare, Industrials):
+- Monthly expirations only: Limited 30-45 DTE choices
+- Lower volume: 50-200K shares/day typical
+- Wider spreads: Bid-ask 10-20% of mid price common
+- Lower IV Ranks: Less frequent >50% IV Rank opportunities
+- Illiquid options: Volume <500 contracts/day
+
+**Result**: Without sector caps, universe would naturally be 60% Technology simply due to filter pass rates.
+
+**Solution**: Soft 35% cap allows Technology to dominate (reflects reality) while preventing extreme concentration.
+
+---
+
+### Universe Composition (Target: 60 stocks)
+
+| Sector | Stocks | % of Universe | Rationale |
+|--------|--------|---------------|-----------|
+| **Technology** | 18-20 | 30-35% | Largest sector (superior options characteristics) |
+| **Financial Services** | 10-12 | 20-24% | Second most liquid options market |
+| **Healthcare** | 8-10 | 16-20% | Defensive diversification |
+| **Consumer Defensive** | 6-8 | 12-16% | Low-correlation to tech |
+| **Industrials** | 5-7 | 10-14% | Economic cycle diversification |
+| **Communication Services** | 4-6 | 8-12% | Growth exposure |
+| **Energy** | 3-4 | 6-8% | Inflation hedge |
+| **Basic Materials** | 3-4 | 6-8% | Commodity exposure |
+
+**Key points**:
+- Technology largest (but <35% cap prevents runaway)
+- All sectors represented (minimum 3 stocks each)
+- 8 sectors total (excellent diversification)
+- Quality threshold maintained (score ≥48)
+
+---
+
+### Position-Level Sector Controls (STRICT)
+
+**Hard Limits** (enforced at trade deployment):
+
+```python
+# From config.py - POSITION_SECTOR_LIMITS
+max_sector_exposure_pct: 40%  # 40% of capital max per sector
+max_positions_per_sector: 3   # 3 concurrent positions max per sector
+min_active_sectors: 3         # Must have positions in ≥3 different sectors
+```
+
+**Warning Thresholds**:
+```python
+warn_sector_exposure_pct: 35%  # Alert at 35% (approaching limit)
+warn_positions_per_sector: 2   # Alert at 2 positions (approaching limit)
+```
+
+---
+
+### Example: Deploying with Sector Awareness
+
+**Scenario**: You have $47,000 capital, VIX is 20 (normal), scan produces 10 candidates.
+
+**Scan Results** (sorted by IV Rank):
+```
+1. NVDA    62% IV Rank - Technology
+2. GOOGL   60% IV Rank - Technology
+3. MSFT    58% IV Rank - Technology
+4. TSM     55% IV Rank - Technology
+5. V       52% IV Rank - Financial Services
+6. LRCX    50% IV Rank - Technology
+7. MRK     48% IV Rank - Healthcare
+8. ISRG    45% IV Rank - Healthcare
+9. KO      42% IV Rank - Consumer Defensive
+10. IBKR   40% IV Rank - Financial Services
+```
+
+**Current Portfolio**: Empty (no positions)
+
+---
+
+**Deployment Round 1**:
+
+| Position | Ticker | IV Rank | Sector | Capital | Sector Check | Result |
+|----------|--------|---------|--------|---------|--------------|--------|
+| 1 | NVDA | 62% | Technology | $7,000 | 0% → 14.9% | ✅ DEPLOYED |
+| 2 | GOOGL | 60% | Technology | $7,000 | 14.9% → 29.8% | ✅ DEPLOYED (warning: 2 positions) |
+| 3 | MSFT | 58% | Technology | $7,000 | 29.8% → 44.7% | ✅ DEPLOYED (warning: approaching limit) |
+| 4 | TSM | 55% | Technology | $7,000 | Already 3 Tech | ❌ REJECTED |
+| 5 | V | 52% | Financial | $7,000 | 0% → 14.9% | ✅ DEPLOYED |
+| 6 | MRK | 48% | Healthcare | $7,000 | 0% → 14.9% | ✅ DEPLOYED |
+
+---
+
+**Final Portfolio**:
+
+```
+Position 1: NVDA   $7,000 (14.9%) - Technology [IV Rank: 62%]
+Position 2: GOOGL  $7,000 (14.9%) - Technology [IV Rank: 60%]
+Position 3: MSFT   $7,000 (14.9%) - Technology [IV Rank: 58%]
+Position 4: V      $7,000 (14.9%) - Financial Services [IV Rank: 52%]
+Position 5: MRK    $7,000 (14.9%) - Healthcare [IV Rank: 48%]
+
+Total deployed: $35,000 (74.5% of capital)
+Cash reserve: $12,000 (25.5%)
+
+Sector Exposure:
+- Technology:         $21,000 (44.7%) - 3 positions [WARN: AT LIMIT]
+- Financial Services: $ 7,000 (14.9%) - 1 position
+- Healthcare:         $ 7,000 (14.9%) - 1 position
+
+Active sectors: 3 ✅ (meets minimum)
+```
+
+**Analysis**:
+- ✅ Deployed 5 high-IV-Rank positions (avg 56% IV Rank)
+- ✅ Rejected TSM (55% IV Rank) due to sector cap → **opportunity cost**
+- ✅ Technology exposure 44.7% (within 40% guideline, warning issued)
+- ✅ Diversified across 3 sectors (meets minimum)
+- ⚠️ Accepted 4.7% over-exposure to capture 3 exceptional Tech opportunities
+
+**Trade-off**: You sacrificed TSM (55% IV Rank) to maintain sector discipline. This is INTENTIONAL - risk management takes priority over maximizing income.
+
+---
+
+### Decision Framework: When to Override Limits
+
+**Normal operations**: ALWAYS respect the 40% sector cap and 3-position limit.
+
+**Extreme conditions**: May temporarily override IF:
+1. VIX >30 (extreme fear environment)
+2. IV Rank >75% on rejected name (exceptional opportunity)
+3. Premium >2% of strike (rare, premium-rich situation)
+4. Duration: Commit to closing 1 position early to restore discipline
+
+**Example Override Scenario**:
+
+**Situation**:
+- VIX spikes to 35 (Feb 2026 volatility event)
+- Already have: NVDA, GOOGL, MSFT (3 Tech positions, 44.7% exposure)
+- TSM shows 82% IV Rank (>95th percentile - extremely rare)
+- TSM premium: $2,100 on $330 strike = 6.4% yield (exceptional)
+
+**Decision**: Deploy TSM as 4th Tech position
+- Technology exposure: 44.7% → 59.6% (violates 40% soft limit but <60% absolute max)
+- Justification: 82% IV Rank is 1-2x per year event, premium compensates for risk
+- Mitigation: Close MSFT position early (after 50% profit or 21 DTE) to restore discipline
+
+**Documentation** (in trade journal notes):
+```
+"VIX spike override: Deploying TSM as 4th Tech position (82% IV Rank, 6.4% premium).
+Tech exposure: 59.6% (exceeds 40% guideline).
+Commitment: Will close MSFT early to restore 40% limit within 2 weeks.
+Risk accepted due to exceptional premium environment."
+```
+
+**Rule**: Overrides allowed ONLY during VIX >30 + IV Rank >75% situations (expect 1-2x per year).
+
+---
+
+### Monitoring & Reporting
+
+**Weekly**: Run sector exposure report
+```bash
+python trade_journal.py sector
+```
+
+**Output**:
+```
+======================================================================
+SECTOR EXPOSURE REPORT (Option B Compromise)
+======================================================================
+Sector                    Positions    Capital         % of Capital
+----------------------------------------------------------------------
+Technology                3            $21,000         44.7%   [WARN]
+  -> NVDA, GOOGL, MSFT
+Financial Services        1            $ 7,000         14.9%
+  -> V
+Healthcare                1            $ 7,000         14.9%
+  -> MRK
+----------------------------------------------------------------------
+TOTAL DEPLOYED            5            $35,000         74.5%
+
+Active sectors: 3 [OK] (min 3 required)
+======================================================================
+```
+
+**Action items**:
+- [LIMIT] If any sector >40%: STOP adding to that sector
+- [WARN] If any sector 35-40%: Caution (1 slot remaining)
+- [OK] If all sectors <35%: Normal operations
+
+---
+
+### Summary: Key Principles
+
+1. **Universe reflects market reality** (Technology has best options characteristics)
+2. **Position limits enforce risk management** (40% max per sector, 3 positions max)
+3. **Opportunity cost is acceptable** (reject 4th Tech position to maintain discipline)
+4. **Override allowed in extremis** (VIX >30 + IV Rank >75%, document justification)
+5. **Monitor weekly** (sector exposure report, take action if >40%)
+
+**Philosophy**: We optimize for deployment opportunities (large universe) while capping downside risk (strict position limits). Technology dominance in universe is INTENTIONAL - it reflects where the best options trades exist.
 
 ---
 
@@ -1160,18 +1386,18 @@ Year 4 (2029): $75K → $100K (+33% return, compounding effect)
    10 stocks ≈ 5% less return for same risk (complexity drag)
 ```
 
-**Mistake 4: Forcing Tier 3 stocks (position size violation)**
+**Mistake 4: Forcing advanced targets (position size violation)**
 ```
 ❌ "I really want MSFT, I'll just break the rules this once"
    Sell MSFT $460 put
    Capital: $46,000 (103% of account)
-   
+
    Outcome: Assigned at $460, stock drops to $400
    ├─ You own $40,000 of stock (90% of account)
    ├─ $4,500 cash left (10% reserve) ← Can't survive second assignment
    ├─ Forced to sell MSFT at loss to free capital
    └─ Or stuck selling $420 covered calls for $1.00/month for 24 months
-   
+
    Better: Wait until account = $200K, then $46K = 23% (acceptable)
 ```
 
@@ -1182,7 +1408,7 @@ Year 4 (2029): $75K → $100K (+33% return, compounding effect)
 **With $44,500 account:**
 
 ✅ **DO:**
-- Trade Tier 1 only (11 stocks under $90)
+- Trade primary targets only (11 stocks under $90)
 - Maintain 4-5 concurrent positions
 - Keep 20-25% cash reserve
 - Target 12-18% annual return
@@ -1197,7 +1423,7 @@ Year 4 (2029): $75K → $100K (+33% return, compounding effect)
 
 **Goal:** Grow account to $100K+ in 3-4 years, then full 28-stock universe becomes accessible.
 
-**Until then:** The 11 Tier 1 stocks provide complete sector diversification, excellent quality (scores 52-80), and realistic position sizing.
+**Until then:** The 11 primary target stocks provide complete sector diversification, excellent quality (scores 52-80), and realistic position sizing.
 
 ---
 

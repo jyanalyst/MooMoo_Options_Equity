@@ -87,6 +87,75 @@ OUTPUT_CONFIG = {
 }
 
 # =============================================================================
+# POSITION-LEVEL SECTOR CONTROLS (Option B Compromise - Jan 2026)
+# =============================================================================
+#
+# These controls enforce diversification at the PORTFOLIO level (active positions),
+# not at the UNIVERSE level (candidate pool).
+#
+# Key distinction:
+# - UNIVERSE: Can have 18 Technology stocks (35% of 60-stock universe)
+# - PORTFOLIO: Can only deploy 3 Technology positions (40% of capital max)
+#
+# This allows:
+# ✅ Large universe (more opportunities)
+# ✅ Technology overweight in universe (reflects options liquidity reality)
+# ✅ Strict risk management in portfolio (prevents concentration)
+#
+# Example scenario:
+# - Universe has 18 Tech stocks, 10 Financial stocks, 8 Healthcare stocks
+# - Scan finds 8 Tech candidates with IV Rank >50%
+# - You deploy: MSFT, GOOGL, TSM (3 Tech positions = 40% capital)
+# - Remaining 5 Tech candidates rejected (hit 3-position limit)
+# - Deploy V (Financial), MRK (Healthcare) to diversify
+#
+# Result: 40% Tech exposure (within limits), but rejected 5 high-IV-Rank
+# opportunities due to sector cap. This is INTENTIONAL - risk management
+# takes priority over income maximization.
+# =============================================================================
+
+POSITION_SECTOR_LIMITS = {
+    # STRICT LIMITS (enforced at trade deployment)
+
+    # Maximum sector exposure across all open positions
+    # Example: With $47K capital, max $18.8K in Technology sector
+    "max_sector_exposure_pct": 0.40,  # 40% of total capital max per sector
+
+    # Maximum number of concurrent positions per sector
+    # Example: Can have at most 3 Technology positions open simultaneously
+    "max_positions_per_sector": 3,    # 3 active positions max per sector
+
+    # Minimum sector diversity in active portfolio
+    # Example: Must have positions in at least 3 different sectors
+    "min_active_sectors": 3,          # Must have positions in ≥3 different sectors
+
+    # WARNING THRESHOLDS (trigger alerts but don't block trades)
+
+    # Issue warning when approaching sector exposure limit
+    "warn_sector_exposure_pct": 0.35,  # Warn at 35% sector exposure (before hitting 40% limit)
+
+    # Issue warning when approaching position count limit
+    "warn_positions_per_sector": 2,    # Warn at 2 positions per sector (before hitting 3-position limit)
+}
+
+# Rationale for 40% max sector exposure:
+# - Allows deploying 3 positions at 15% each = 45% (slightly over, triggers warning)
+# - During high-volatility environments (VIX >25), may temporarily exceed for premium capture
+# - Prevents concentration >50% in any single sector
+# - Balances opportunity (can take 3 Tech positions if IV Ranks are high) with risk
+
+# Rationale for 3 max positions per sector:
+# - With $47K capital and 15% position sizing = $7K per position
+# - 3 positions = $21K = 45% sector exposure (manageable, diversified within sector)
+# - Prevents over-concentration while allowing multiple high-IV-Rank names
+# - Example: Can deploy MSFT, GOOGL, TSM simultaneously if all show >50% IV Rank
+
+# Rationale for min 3 active sectors:
+# - Ensures basic diversification even with small portfolio (4-6 positions)
+# - Prevents "all Tech" or "all Financial" portfolios
+# - Forces capital deployment across uncorrelated sectors
+
+# =============================================================================
 # IV RANK CALCULATION
 # =============================================================================
 
