@@ -26,7 +26,16 @@ Sector diversity enforced:
 - Max 35% of universe per sector (~21 stocks for 60-stock universe)
 - Min 3 stocks per sector
 - Min 6 sectors total
-- Max 4 cyclicals (Energy + Basic Materials)
+- Max 6 cyclicals (Energy + Basic Materials) - allows 3 per sector minimum
+
+SPECIAL EXEMPTIONS:
+- Traditional banks (JPM, WFC, BAC, USB, etc.): Quality score floored at threshold
+  Rationale: Banks have structural characteristics (regulatory capital requirements,
+  different FCF models) that hurt percentile scoring, but are excellent options
+  trading candidates (high volume, tight spreads, weekly expirations)
+
+- Cyclical limit set to 6 (allows 3 Energy + 3 Basic Materials): Ensures both
+  cyclical sectors can meet the 3-stock minimum without hitting cyclical cap
 """
 
 import argparse
@@ -298,6 +307,26 @@ GEOPOLITICAL_PENALTY = 0.80  # 20% penalty for China ADRs
 # Consumer Cyclical stocks that are actually cyclical (exclude AMZN, COST - they have moats)
 CYCLICAL_CONSUMER = ['LULU', 'NKE', 'SBUX', 'MCD', 'HD', 'LOW', 'TJX', 'ROST']
 
+# =============================================================================
+# BANK QUALITY SCORE EXEMPTION (Jan 2026)
+# =============================================================================
+# Traditional banks have structural characteristics that hurt quality scoring:
+# 1. Operating margins: 20-26% (vs. 40%+ for tech) - regulatory constraints
+# 2. Current ratios: 13-15 (regulatory capital requirements, not inefficiency)
+# 3. FCF margins: Negative/low (banks deploy capital differently than industrial companies)
+# 4. But: Excellent Wheel Strategy candidates (high volume, tight spreads, weekly options)
+TRADITIONAL_BANKS = [
+    'JPM',   # JPMorgan Chase
+    'WFC',   # Wells Fargo
+    'BAC',   # Bank of America
+    'USB',   # US Bancorp
+    'C',     # Citigroup
+    'PNC',   # PNC Financial
+    'TFC',   # Truist Financial
+    'COF',   # Capital One
+    'SCHW',  # Charles Schwab (brokerage, but similar characteristics)
+]
+
 SECTOR_DIVERSITY_CONSTRAINTS = {
     # =========================================================================
     # OPTION B COMPROMISE (Jan 2026) - SOFT CAPS
@@ -310,7 +339,7 @@ SECTOR_DIVERSITY_CONSTRAINTS = {
     'min_per_sector': 3,           # NEW: Minimum 3 stocks per sector (prevents underrepresentation)
     'max_sector_pct': 0.35,        # NEW: No sector >35% of universe (soft cap)
     'min_sectors': 6,              # INCREASED: Require 6+ sectors (was 5)
-    'max_cyclical_total': 6,       # INCREASED: Allow 4 cyclicals total (was 3)
+    'max_cyclical_total': 6,       # UPDATED: Allow 3 Energy + 3 Basic Materials = 6
 
     # Absolute safety limits
     'max_sector_hard_cap': 20,     # NEW: No sector can have >20 stocks (prevents runaway)
@@ -2037,6 +2066,62 @@ def apply_cyclical_penalty(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def apply_bank_quality_floor(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply quality score floor to traditional banks.
+
+    Traditional banks have structural characteristics that hurt quality scoring:
+    - Low operating margins (20-26% vs. 30%+ for tech) - regulatory constraints
+    - Regulatory current ratios (13-15) skew percentile rankings
+    - Negative/low FCF margins (banks use different capital deployment model)
+
+    But they are excellent Wheel Strategy candidates:
+    - High trading volume
+    - Tight bid-ask spreads
+    - Weekly options available
+    - Strong brand recognition
+
+    This function floors bank quality scores at MIN_QUALITY_FLOOR to ensure
+    they aren't excluded despite the scoring algorithm bias.
+
+    Args:
+        df: DataFrame with Quality_Score and Ticker columns
+
+    Returns:
+        DataFrame with bank quality scores floored at MIN_QUALITY_FLOOR
+    """
+    df = df.copy()
+
+    if 'Ticker' not in df.columns or 'Quality_Score' not in df.columns:
+        print("  [WARN] Missing Ticker or Quality_Score column - skipping bank floor")
+        return df
+
+    print(f"\n[BANK EXEMPTION] Checking {len(TRADITIONAL_BANKS)} traditional bank tickers...")
+
+    banks_in_dataset = df[df['Ticker'].isin(TRADITIONAL_BANKS)]
+    print(f"  Found {len(banks_in_dataset)} banks in current dataset")
+
+    if not banks_in_dataset.empty:
+        banks_below_threshold = banks_in_dataset[banks_in_dataset['Quality_Score'] < MIN_QUALITY_FLOOR]
+
+        if not banks_below_threshold.empty:
+            print(f"  Applying quality floor to {len(banks_below_threshold)} banks below threshold:")
+
+            for idx, row in banks_below_threshold.iterrows():
+                original_score = row['Quality_Score']
+                df.at[idx, 'Quality_Score'] = MIN_QUALITY_FLOOR
+                print(f"    {row['Ticker']}: {original_score:.1f} → {MIN_QUALITY_FLOOR} (FLOORED)")
+        else:
+            print(f"  [OK] All {len(banks_in_dataset)} banks already above {MIN_QUALITY_FLOOR} threshold")
+
+        # Show final bank scores
+        print(f"\n  Final bank quality scores:")
+        for _, row in df[df['Ticker'].isin(TRADITIONAL_BANKS)].iterrows():
+            print(f"    {row['Ticker']}: {row['Quality_Score']:.1f} (Sector: {row.get('Sector', 'N/A')})")
+
+    return df
+
+
 def calculate_revenue_consistency(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate 3-year revenue CAGR and volatility to identify secular businesses.
@@ -2824,6 +2909,23 @@ def validate_single_universe(universe: List[str], df: pd.DataFrame) -> bool:
     if cyclical_count > max_cyclical:
         issues.append(f"  [WARN] {cyclical_count} cyclical stocks (max: {max_cyclical})")
 
+    # Check bank inclusion (informational, not blocking)
+    print(f"\n  === Bank Inclusion Check ===")
+    PRIORITY_BANKS = ['JPM', 'WFC', 'BAC', 'USB']
+    available_banks = df[df['Ticker'].isin(PRIORITY_BANKS)]['Ticker'].tolist()
+    selected_banks = [t for t in universe if t in PRIORITY_BANKS]
+
+    if available_banks:
+        print(f"    Available banks in dataset: {', '.join(available_banks)}")
+        print(f"    Selected banks in universe: {', '.join(selected_banks) if selected_banks else 'None'}")
+
+        missing_banks = [b for b in available_banks if b not in selected_banks]
+        if missing_banks:
+            print(f"    [WARN] Banks available but not selected: {', '.join(missing_banks)}")
+            print(f"           Check if quality floor exemption was applied correctly")
+    else:
+        print(f"    [OK] No priority banks in dataset (filtered in earlier stages)")
+
     if issues:
         print("\n".join(issues))
         try:
@@ -3280,6 +3382,10 @@ def main():
         # Apply cyclical sector penalty (reduce commodity concentration)
         print("\n[Step 3.6/7] Applying cyclical sector penalty...")
         df = apply_cyclical_penalty(df)
+
+        # Apply bank quality score floor (ensures banks pass threshold despite scoring bias)
+        print("\n[Step 3.7/7] Applying bank quality score floor...")
+        df = apply_bank_quality_floor(df)
 
         # === DEBUG: PG-specific metric analysis ===
         PG_DIAGNOSTIC_TICKERS = ['PG', 'KO', 'WMT', 'JNJ', 'JPM', 'WFC']
