@@ -8,7 +8,8 @@ from screener_wheel import WheelScreener
 
 def test_scanner():
     fetcher = get_data_fetcher(use_mock=False)
-    screener = WheelScreener(fetcher, tier=1)
+    # Test with stocks requiring ≤$7,000 capital (~$70/share)
+    screener = WheelScreener(fetcher, max_capital=7000)
     screener.universe = ['PLTR', 'INTC', 'AMD', 'SOFI']  # Test multiple stocks
 
     print('Testing INTC with full debugging...')

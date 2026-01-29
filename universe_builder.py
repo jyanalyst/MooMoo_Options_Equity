@@ -310,7 +310,7 @@ SECTOR_DIVERSITY_CONSTRAINTS = {
     'min_per_sector': 3,           # NEW: Minimum 3 stocks per sector (prevents underrepresentation)
     'max_sector_pct': 0.35,        # NEW: No sector >35% of universe (soft cap)
     'min_sectors': 6,              # INCREASED: Require 6+ sectors (was 5)
-    'max_cyclical_total': 4,       # INCREASED: Allow 4 cyclicals total (was 3)
+    'max_cyclical_total': 6,       # INCREASED: Allow 4 cyclicals total (was 3)
 
     # Absolute safety limits
     'max_sector_hard_cap': 20,     # NEW: No sector can have >20 stocks (prevents runaway)
