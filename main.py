@@ -162,8 +162,18 @@ Examples:
 
     parser.add_argument(
         '--allow-unverified',
-        action='store_true',
+        action='store_const',
+        const=True,
+        default=None,  # None = use config value, True = force allow
         help='Allow stocks with unverified earnings dates (requires manual verification)'
+    )
+
+    parser.add_argument(
+        '--strict-earnings',
+        action='store_const',
+        const=False,
+        dest='allow_unverified',  # Sets allow_unverified to False
+        help='Reject stocks with unverified earnings (overrides config)'
     )
 
     args = parser.parse_args()
