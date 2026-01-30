@@ -282,11 +282,18 @@ class WheelScreener:
         # Analyze each option
         valid_options = []
 
-        for idx, opt in chain.iterrows():
+        for i, (idx, opt) in enumerate(chain.iterrows()):
             opt_analysis = self._analyze_option(opt, quote['price'])
 
-            if verbose and idx < 3:  # Show first 3 options analysis
-                print(f"         Option {idx+1}: Strike ${opt_analysis['strike']}, Premium ${opt_analysis['premium']:.2f}, Spread {opt_analysis['spread_pct']:.1f}%, Passes: {opt_analysis['passes_filters']}")
+            if verbose and i < 3:  # Show first 3 options analysis
+                pass_status = "PASS" if opt_analysis['passes_filters'] else "FAIL"
+                fail_reasons = []
+                if not opt_analysis['passes_liquidity']:
+                    fail_reasons.append(f"liquidity(vol={opt_analysis['volume']},OI={opt_analysis['open_interest']})")
+                if not opt_analysis['passes_premium']:
+                    fail_reasons.append(f"premium({opt_analysis['return_pct']:.2f}%<{self.config['premium_pct_of_strike_min']*100:.1f}%)")
+                fail_str = f" [{', '.join(fail_reasons)}]" if fail_reasons else ""
+                print(f"         Option {i+1}: Strike ${opt_analysis['strike']}, Bid ${opt_analysis['bid']:.2f}, OI={opt_analysis['open_interest']}, {pass_status}{fail_str}")
 
             if opt_analysis['passes_filters']:
                 valid_options.append(opt_analysis)
