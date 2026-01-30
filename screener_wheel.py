@@ -28,7 +28,7 @@ class WheelScreener:
     - Term structure: Contango preferred
     """
     
-    def __init__(self, data_fetcher, max_capital: int = None, tier: int = None, allow_unverified: bool = False):
+    def __init__(self, data_fetcher, max_capital: int = None, tier: int = None, allow_unverified: bool = None):
         """
         Initialize Wheel Screener.
 
@@ -37,11 +37,12 @@ class WheelScreener:
             max_capital: Maximum capital per position in dollars (optional)
                         e.g., 10000 filters to stocks with price <= $100
             tier: DEPRECATED - kept for backward compatibility, use max_capital instead
-            allow_unverified: Allow stocks with unverified earnings dates
+            allow_unverified: Allow stocks with unverified earnings dates (default: from config)
         """
         self.data_fetcher = data_fetcher
         self.max_capital = max_capital
-        self.allow_unverified = allow_unverified
+        # Default to config value if not explicitly specified
+        self.allow_unverified = allow_unverified if allow_unverified is not None else WHEEL_CONFIG.get("allow_unverified_earnings", True)
 
         # Backward compatibility: convert tier to approximate capital
         if tier is not None and max_capital is None:

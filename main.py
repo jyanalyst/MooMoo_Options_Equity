@@ -17,6 +17,7 @@ from datetime import datetime
 from data_fetcher import get_data_fetcher, MOOMOO_AVAILABLE
 from screener_wheel import WheelScreener
 from output_formatter import OutputFormatter
+from config import WHEEL_CONFIG
 
 
 def print_banner():
@@ -35,7 +36,7 @@ def print_banner():
     """)
 
 
-def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, verbose: bool = True, allow_unverified: bool = False):
+def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, verbose: bool = True, allow_unverified: bool = None):
     """
     Run Wheel Strategy screening.
 
@@ -49,6 +50,10 @@ def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, ve
     Returns:
         List of candidates
     """
+    # Default to config value if not explicitly specified
+    if allow_unverified is None:
+        allow_unverified = WHEEL_CONFIG.get("allow_unverified_earnings", True)
+
     print(f"\n{'='*60}")
     print(f">>> WHEEL STRATEGY SCAN")
     print(f"    Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
