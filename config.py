@@ -37,8 +37,8 @@ WHEEL_CONFIG = {
     "delta_max": 0.30,
     "dte_min": 30,
     "dte_max": 45,
-    "volume_min": 10,  # RELAXED: Minimum volume (OR logic with OI)
-    "open_interest_min": 100,  # RELAXED: Minimum open interest (many wheel candidates have OI 100-500)
+    "volume_min": 1,  # RELAXED: Minimum volume (OR logic with OI) - just needs SOME activity
+    "open_interest_min": 10,  # RELAXED: Minimum open interest - wheel positions are held to expiration anyway
     "bid_ask_spread_max_pct": 0.50,  # TEMPORARILY RELAXED FOR DEBUGGING (50% of mid)
     
     # Premium target
