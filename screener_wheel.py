@@ -233,16 +233,18 @@ class WheelScreener:
             print(f"      -> IV Rank: {result['iv_rank']}%")
             print(f"      -> Term Structure: {result['term_structure']} ({result['term_structure_recommendation']})")
 
-        # Check IV Rank filter
+        # IV Rank is now a SOFT filter - low IV Rank reduces score but doesn't reject
+        # This ensures we always get top 3 candidates even in low IV environments
+        iv_warning = None
         if result['iv_rank'] is not None and result['iv_rank'] < self.config['iv_rank_min']:
-            result['status'] = 'REJECTED'
-            result['reject_reason'] = f"IV Rank {result['iv_rank']:.1f}% < {self.config['iv_rank_min']}% minimum"
-            if verbose:
-                print(f"      [X] REJECTED: {result['reject_reason']}")
-            return result
+            iv_warning = f"Low IV Rank ({result['iv_rank']:.1f}% < {self.config['iv_rank_min']}%)"
+            result['iv_warning'] = iv_warning
 
         if verbose:
-            print(f"      [OK] IV Rank filter passed")
+            if iv_warning:
+                print(f"      [!] IV Rank below threshold ({result['iv_rank']:.1f}%) - will reduce score")
+            else:
+                print(f"      [OK] IV Rank filter passed")
             print(f"      Step 5: Getting options chain (PUTs, delta {self.config['delta_min']}-{self.config['delta_max']})...")
 
         # Get options chain with delta filter
@@ -277,51 +279,53 @@ class WheelScreener:
             return result
 
         if verbose:
-            print(f"      Step 6: Analyzing {len(chain)} options for spread/premium filters...")
+            print(f"      Step 6: Ranking {len(chain)} options by quality score...")
 
-        # Analyze each option
-        valid_options = []
+        # RANKING-BASED: Score ALL options, don't filter
+        all_options = []
 
         for i, (idx, opt) in enumerate(chain.iterrows()):
             opt_analysis = self._analyze_option(opt, quote['price'])
 
-            if verbose and i < 3:  # Show first 3 options analysis
-                pass_status = "PASS" if opt_analysis['passes_filters'] else "FAIL"
-                fail_reasons = []
-                if not opt_analysis['passes_liquidity']:
-                    fail_reasons.append(f"liquidity(vol={opt_analysis['volume']},OI={opt_analysis['open_interest']})")
-                if not opt_analysis['passes_premium']:
-                    fail_reasons.append(f"premium({opt_analysis['return_pct']:.2f}%<{self.config['premium_pct_of_strike_min']*100:.1f}%)")
-                fail_str = f" [{', '.join(fail_reasons)}]" if fail_reasons else ""
-                print(f"         Option {i+1}: Strike ${opt_analysis['strike']}, Bid ${opt_analysis['bid']:.2f}, OI={opt_analysis['open_interest']}, {pass_status}{fail_str}")
+            # Only include options with a valid bid (can't trade with $0 bid)
+            if opt_analysis['bid'] > 0:
+                all_options.append(opt_analysis)
 
-            if opt_analysis['passes_filters']:
-                valid_options.append(opt_analysis)
+            if verbose and i < 3:  # Show first 3 options
+                warnings_str = f" [{', '.join(opt_analysis['warnings'])}]" if opt_analysis['warnings'] else ""
+                print(f"         Option {i+1}: ${opt_analysis['strike']} | Bid ${opt_analysis['bid']:.2f} | OI={opt_analysis['open_interest']} | Score={opt_analysis['quality_score']:.0f}{warnings_str}")
 
         if verbose:
-            print(f"      -> Valid options after filters: {len(valid_options)}")
+            print(f"      -> Options with valid bid: {len(all_options)}")
 
-        if not valid_options:
+        if not all_options:
             result['status'] = 'REJECTED'
-            result['reject_reason'] = 'No options pass all filters (spread, premium)'
+            result['reject_reason'] = 'No options with valid bid price'
             if verbose:
                 print(f"      [X] REJECTED: {result['reject_reason']}")
             return result
 
-        # Sort options by quality score and take best
-        valid_options = sorted(valid_options, key=lambda x: x['quality_score'], reverse=True)
-        result['options'] = valid_options[:3]  # Top 3 options
-        result['best_option'] = valid_options[0]
+        # Sort ALL options by quality score and take best
+        all_options = sorted(all_options, key=lambda x: x['quality_score'], reverse=True)
+        result['options'] = all_options[:3]  # Top 3 options
+        result['best_option'] = all_options[0]
+
+        # Add warnings from best option to result
+        result['option_warnings'] = all_options[0].get('warnings', [])
 
         # Calculate overall quality score
         result['quality_score'] = self._calculate_quality_score(result)
 
         if verbose:
-            print(f"      [OK] CANDIDATE: {ticker}")
+            warnings = result.get('option_warnings', [])
+            status = "[OK] CANDIDATE" if not warnings else "[!] CANDIDATE (with warnings)"
+            print(f"      {status}: {ticker}")
             print(f"         Expiration: {expiration} ({dte} DTE)")
             print(f"         IV Rank: {result['iv_rank']}%")
-            print(f"         Best Strike: ${result['best_option']['strike']}")
+            print(f"         Best Strike: ${result['best_option']['strike']} (Score: {result['best_option']['quality_score']:.0f})")
             print(f"         Premium: ${result['best_option']['premium']:.2f} ({result['best_option']['return_pct']:.2f}%)")
+            if warnings:
+                print(f"         Warnings: {', '.join(warnings)}")
 
         return result
     
@@ -385,26 +389,64 @@ class WheelScreener:
         cash_required = strike * 100
         return_pct = (premium / strike) * 100 if strike > 0 else 0
 
-        # Liquidity filter: Accept if EITHER volume OR open interest is sufficient
-        volume_ok = volume >= self.config.get('volume_min', 50)
-        oi_ok = oi >= self.config.get('open_interest_min', 500)
-        passes_liquidity = volume_ok or oi_ok
+        # RANKING-BASED APPROACH: Score everything, don't reject
+        # Calculate quality score for ALL options (higher = better)
 
-        # Relaxed filters for testing - focus on premium rather than spread
-        passes_spread = spread_pct <= self.config['bid_ask_spread_max_pct'] or last_price > 0  # Allow if we have last_price
-        passes_premium = return_pct >= (self.config['premium_pct_of_strike_min'] * 100)
+        # Premium score (0-40 points) - most important for wheel strategy
+        premium_score = min(return_pct * 10, 40)  # 4% return = max 40 points
 
-        passes_filters = passes_premium and passes_liquidity  # Focus on premium and liquidity (volume OR OI), relax spread
+        # Liquidity score (0-20 points)
+        liquidity_score = 0
+        if oi >= 100:
+            liquidity_score = 20
+        elif oi >= 50:
+            liquidity_score = 15
+        elif oi >= 10:
+            liquidity_score = 10
+        elif oi >= 1:
+            liquidity_score = 5
+        # Volume bonus
+        if volume >= 10:
+            liquidity_score = min(liquidity_score + 5, 20)
 
-        # Quality score for this option
-        quality_score = 0
-        if passes_filters:
-            quality_score = (
-                return_pct * 2 +  # Premium return (weighted)
-                (1 - spread_pct) * 10 +  # Tight spread bonus
-                min(volume / 1000, 5) +  # Volume bonus (capped)
-                min(oi / 5000, 5)  # OI bonus (capped)
-            )
+        # Spread score (0-20 points) - tighter is better
+        if spread_pct <= 0.05:  # 5% or less
+            spread_score = 20
+        elif spread_pct <= 0.10:  # 10% or less
+            spread_score = 15
+        elif spread_pct <= 0.20:  # 20% or less
+            spread_score = 10
+        elif spread_pct <= 0.50:  # 50% or less
+            spread_score = 5
+        else:
+            spread_score = 0
+
+        # Delta score (0-10 points) - prefer 0.25-0.30 range
+        delta_score = 0
+        if 0.25 <= delta <= 0.30:
+            delta_score = 10  # Ideal range
+        elif 0.20 <= delta <= 0.35:
+            delta_score = 7  # Acceptable range
+        elif 0.15 <= delta <= 0.40:
+            delta_score = 4  # Edge of range
+
+        # Total option quality score (0-90)
+        quality_score = premium_score + liquidity_score + spread_score + delta_score
+
+        # Generate warnings (informational, not rejections)
+        warnings = []
+        if oi < 10:
+            warnings.append(f"low OI({oi})")
+        if spread_pct > 0.20:
+            warnings.append(f"wide spread({spread_pct*100:.0f}%)")
+        if return_pct < 0.5:
+            warnings.append(f"low premium({return_pct:.1f}%)")
+
+        # Legacy pass/fail flags for backward compatibility
+        passes_liquidity = oi >= 1 or volume >= 1  # Very relaxed - just needs ANY activity
+        passes_spread = spread_pct <= 0.50 or last_price > 0
+        passes_premium = return_pct >= 0.1  # At least 0.1% return
+        passes_filters = bid > 0  # Just needs a valid bid
 
         return {
             'code': option.get('code', ''),
@@ -427,6 +469,11 @@ class WheelScreener:
             'passes_liquidity': passes_liquidity,
             'passes_filters': passes_filters,
             'quality_score': round(quality_score, 2),
+            'premium_score': round(premium_score, 1),
+            'liquidity_score': round(liquidity_score, 1),
+            'spread_score': round(spread_score, 1),
+            'delta_score': round(delta_score, 1),
+            'warnings': warnings,
         }
     
     def _calculate_quality_score(self, result: Dict) -> float:
