@@ -47,11 +47,22 @@ WHEEL_CONFIG = {
     # Earnings buffer
     "earnings_buffer_days": 7,
 
-    # Earnings validation (CONSERVATIVE MODE - UPDATED)
-    "allow_unverified_earnings": False,  # Reject stocks with missing earnings data (fail-safe default)
+    # Earnings validation (FAIL-OPEN MODE - FMP Migration)
+    "allow_unverified_earnings": True,  # Proceed with warning when FMP data unavailable (user verifies)
 
     # Term structure (contango = favorable)
     "term_structure_check": True,
+}
+
+# =============================================================================
+# EARNINGS CONFIGURATION (FMP-Only)
+# =============================================================================
+
+EARNINGS_CONFIG = {
+    "data_source": "FMP",  # Only FMP now (yfinance removed)
+    "cache_expiry_hours": 12,  # Refresh earnings cache every 12 hours
+    "allow_unverified": True,  # Default: fail-open (proceed with warning)
+    "buffer_days": 7,  # Buffer days after expiration
 }
 
 # =============================================================================
