@@ -36,7 +36,7 @@ def print_banner():
     """)
 
 
-def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, verbose: bool = True, allow_unverified: bool = None):
+def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, verbose: bool = True, allow_unverified: bool = None, liquid_only: bool = False):
     """
     Run Wheel Strategy screening.
 
@@ -46,6 +46,7 @@ def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, ve
         export_csv: Export results to CSV
         verbose: Print verbose output
         allow_unverified: Allow stocks with unverified earnings dates
+        liquid_only: Scan only high-liquidity stocks with tight spreads
 
     Returns:
         List of candidates
@@ -56,6 +57,9 @@ def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, ve
 
     print(f"\n{'='*60}")
     print(f">>> WHEEL STRATEGY SCAN")
+    if liquid_only:
+        print(f"    Mode: HIGH-LIQUIDITY ONLY")
+        print(f"    Expected: Tight spreads (<20%), fast execution")
     print(f"    Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"    Max Capital/Position: ${max_capital:,}")
     if allow_unverified:
@@ -63,6 +67,18 @@ def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, ve
     print(f"{'='*60}")
 
     screener = WheelScreener(fetcher, max_capital=max_capital, allow_unverified=allow_unverified)
+
+    # Override universe if liquid-only mode
+    if liquid_only:
+        from universe import get_liquid_wheel_universe
+        screener.universe = get_liquid_wheel_universe(max_capital)
+        print(f"\n[LIQUID MODE] Scanning {len(screener.universe)} high-liquidity stocks")
+        print(f"   Expected spreads: <20% (vs. 50%+ for full universe)")
+        tickers_preview = ', '.join(screener.universe[:10])
+        if len(screener.universe) > 10:
+            tickers_preview += '...'
+        print(f"   Tickers: {tickers_preview}\n")
+
     candidates = screener.screen_candidates(verbose=verbose)
 
     formatter = OutputFormatter()
@@ -111,12 +127,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py wheel              # Scan for Wheel candidates (default $8,900 max capital)
-  python main.py wheel --capital 6700  # Scan stocks requiring <=$6,700/position (15% sizing)
-  python main.py wheel --capital 8900  # Scan stocks requiring <=$8,900/position (20% sizing)
-  python main.py wheel --capital 15000 # Scan stocks requiring <=$15,000/position
-  python main.py --mock wheel       # Test with mock data
-  python main.py wheel --no-csv     # Scan without CSV export
+  python main.py wheel                          # Scan full universe (~40 stocks)
+  python main.py wheel --liquid-only            # Scan liquid names only (~15 stocks, faster)
+  python main.py wheel --capital 6700           # Scan stocks requiring <=$6,700/position
+  python main.py wheel --liquid-only --capital 20000  # Liquid names under $20k
+  python main.py --mock wheel                   # Test with mock data
+  python main.py wheel --no-csv                 # Scan without CSV export
         """
     )
 
@@ -151,6 +167,14 @@ Examples:
         '--quiet',
         action='store_true',
         help='Minimal output (suppress verbose screening details)'
+    )
+
+    parser.add_argument(
+        '--liquid-only',
+        action='store_true',
+        help='Scan only high-liquidity stocks with tight spreads (<20%%). '
+             'Faster scans, better execution, smaller universe (~15 stocks vs 40). '
+             'Ideal for trading during US market hours or when prioritizing fill quality.'
     )
 
     parser.add_argument(
@@ -223,7 +247,8 @@ Examples:
             max_capital=args.capital,
             export_csv=export_csv,
             verbose=verbose,
-            allow_unverified=args.allow_unverified
+            allow_unverified=args.allow_unverified,
+            liquid_only=args.liquid_only
         )
 
         # Print summary

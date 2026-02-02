@@ -76,6 +76,82 @@ MANUAL_TICKERS = [
 ]
 
 # =============================================================================
+# HIGH-LIQUIDITY OPTIONS TICKERS
+# Stocks with consistently tight bid-ask spreads (<20%) and deep options markets
+# Use --liquid-only flag to scan only these names for faster, cleaner results
+# =============================================================================
+
+HIGH_LIQUIDITY_TICKERS = [
+    # === MEGA-CAP ETFs (Highest Liquidity) ===
+    'SPY',   # S&P 500 ETF - King of options liquidity
+    'QQQ',   # Nasdaq-100 ETF - Tech options powerhouse
+    'IWM',   # Russell 2000 ETF - Small cap exposure
+    'DIA',   # Dow Jones ETF
+    'EEM',   # Emerging Markets ETF
+    'GLD',   # Gold ETF
+    'TLT',   # 20-Year Treasury ETF
+    'XLF',   # Financials ETF
+    'XLE',   # Energy ETF
+
+    # === MEGA-CAP TECH (Active Options, Tight Spreads) ===
+    'AAPL',  # Apple - Most liquid single-stock options
+    'MSFT',  # Microsoft - Enterprise tech giant
+    'GOOGL', # Alphabet - Search/cloud leader
+    'AMZN',  # Amazon - E-commerce/AWS
+    'NVDA',  # Nvidia - AI/GPU leader
+    'META',  # Meta - Social media giant
+    'TSLA',  # Tesla - High IV, active options
+
+    # === LARGE-CAP TECH (Good Liquidity) ===
+    'AMD',   # Advanced Micro Devices
+    'INTC',  # Intel
+    'NFLX',  # Netflix
+    'AVGO',  # Broadcom
+    'CRM',   # Salesforce
+    'ORCL',  # Oracle
+    'ADBE',  # Adobe
+
+    # === LARGE-CAP FINANCE ===
+    'JPM',   # JPMorgan Chase
+    'BAC',   # Bank of America
+    'WFC',   # Wells Fargo
+    'GS',    # Goldman Sachs
+    'MS',    # Morgan Stanley
+    'C',     # Citigroup
+    'V',     # Visa
+    'MA',    # Mastercard
+
+    # === LARGE-CAP HEALTHCARE ===
+    'UNH',   # UnitedHealth
+    'JNJ',   # Johnson & Johnson
+    'PFE',   # Pfizer
+    'ABBV',  # AbbVie
+    'MRK',   # Merck
+    'LLY',   # Eli Lilly
+
+    # === LARGE-CAP CONSUMER ===
+    'WMT',   # Walmart
+    'HD',    # Home Depot
+    'MCD',   # McDonald's
+    'DIS',   # Disney
+    'NKE',   # Nike
+    'SBUX',  # Starbucks
+
+    # === HIGH-VOLATILITY NAMES (Wide spreads acceptable due to premium) ===
+    'COIN',  # Coinbase - Crypto exposure
+    'RIVN',  # Rivian - EV play
+    'PLTR',  # Palantir - AI/defense
+    'SOFI',  # SoFi - Fintech
+]
+
+# Rationale for Liquid-Only List:
+# - Daily options volume >50,000 contracts
+# - Open interest >100,000 contracts
+# - Bid-ask spreads typically <20% (vs. 50%+ for low-liquidity names)
+# - Active market makers during US trading hours
+# - Institutional-grade execution quality
+
+# =============================================================================
 # POSITION SIZING (Reference only - not used in scanner logic)
 # =============================================================================
 

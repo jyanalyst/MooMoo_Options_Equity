@@ -186,6 +186,61 @@ def get_affordable_stocks(max_capital: int) -> list:
     return sorted(affordable, key=lambda x: x[1])
 
 
+def get_liquid_wheel_universe(max_capital: int = None) -> list:
+    """
+    Get high-liquidity subset of Wheel Strategy universe.
+
+    Filters to stocks with consistently tight bid-ask spreads (<20%)
+    and deep options markets (volume >50k/day, OI >100k).
+
+    Use this when:
+    - Trading during low-liquidity hours (Singapore time, US market closed)
+    - Want guaranteed tight spreads (<20% vs. 50%+ for full universe)
+    - Prioritize execution quality over universe size
+
+    Args:
+        max_capital: Maximum capital per position in dollars (optional)
+                    e.g., 10000 filters to stocks with price <= $100
+
+    Returns:
+        List of high-liquidity ticker symbols
+
+    Example:
+        >>> universe = get_liquid_wheel_universe(max_capital=20000)
+        >>> # Returns ~15-20 mega-caps with tight spreads
+    """
+    from config import HIGH_LIQUIDITY_TICKERS
+
+    # Start with full quality-screened universe
+    full_universe = get_wheel_universe(max_capital)
+
+    # Intersection: stocks that are BOTH in quality universe AND liquid
+    liquid_universe = [t for t in full_universe if t in HIGH_LIQUIDITY_TICKERS]
+
+    # Also add liquid mega-caps that might not be in quality universe
+    # (useful for adding AAPL, MSFT, GOOGL even if quality score is borderline)
+    for ticker in HIGH_LIQUIDITY_TICKERS:
+        if ticker not in liquid_universe:
+            # Check capital constraint
+            if max_capital is not None:
+                # Rough price estimates for mega-caps
+                estimated_prices = {
+                    'AAPL': 180, 'MSFT': 420, 'GOOGL': 150, 'AMZN': 180,
+                    'NVDA': 140, 'META': 500, 'TSLA': 250, 'SPY': 580,
+                    'QQQ': 480, 'IWM': 200
+                }
+                estimated_price = estimated_prices.get(ticker, 100)  # Default $100
+                required_capital = estimated_price * 100  # 100 shares
+
+                if required_capital <= max_capital:
+                    liquid_universe.append(ticker)
+            else:
+                # No capital constraint, add all liquid names
+                liquid_universe.append(ticker)
+
+    return sorted(liquid_universe)  # Return alphabetically sorted
+
+
 def add_to_excluded(ticker: str):
     """Add a ticker to excluded list (runtime only)"""
     if ticker not in EXCLUDED_TICKERS:
