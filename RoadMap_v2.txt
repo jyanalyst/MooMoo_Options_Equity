@@ -1,0 +1,821 @@
+## WHEEL STRATEGY OPTIMIZATION ROADMAP V2
+## Focus: Remove Bottlenecks, Not Add Complexity
+
+**Philosophy:** Build only what directly improves strategy execution or performance measurement. 
+Reject activity that feels productive but doesn't move key metrics.
+
+**Key Metrics to Move:**
+1. Number of quality trade opportunities per week (currently 2-3, target 4-6)
+2. Win rate on closed positions (target 70-75%)
+3. Average return per trade (target 1-1.5% on capital deployed)
+4. Time spent on low-value tasks (currently ~30 min/week on manual checks)
+
+---
+
+## PHASE 1: EXPAND OPPORTUNITY SET (Week 1-2)
+**Goal:** Increase universe from 18 to 30 quality stocks
+**Time investment:** 4-6 hours total
+**Expected ROI:** 67% more trade opportunities per screening session
+
+### 1.1 Debug Universe Builder Bottlenecks
+
+**Problem:** Universe plateaus at 18 stocks despite relaxed filters.
+
+**Diagnostic workflow:**
+```python
+# Add to universe_builder.py
+def diagnose_filtering_bottleneck():
+    """
+    Track where expected blue chips are lost in pipeline.
+    
+    Expected stocks to find: JPM, WFC, USB, WMT, SO, DUK, NEE
+    """
+    
+    test_tickers = ['JPM', 'WFC', 'USB', 'WMT', 'SO', 'DUK', 'NEE', 
+                    'KO', 'PG', 'JNJ', 'MSFT', 'GOOGL']
+    
+    results = {}
+    
+    for ticker in test_tickers:
+        results[ticker] = {
+            'has_data': check_fmp_data_exists(ticker),
+            'passes_financial_health': passes_financial_filters(ticker),
+            'passes_quality_score': calculate_quality_score(ticker) > 40,
+            'sector': get_sector(ticker),
+            'rejected_reason': identify_rejection_reason(ticker)
+        }
+    
+    # Output table showing exactly where each stock fails
+    print_diagnostic_table(results)
+```
+
+**Action items:**
+- Run diagnostic on expected blue chips
+- Identify specific filter causing exclusions (likely sector diversity limits)
+- Adjust filter thresholds incrementally:
+  - If sector limits too strict: Increase max_per_sector from 4 to 5
+  - If quality threshold too high: Lower minimum quality score from 44 to 40
+  - If financial filters too strict: Document specific metrics failing
+
+**Success criteria:** 
+- All 12 test tickers either included OR have documented rejection reason
+- Universe reaches 25-30 stocks
+- No quality stocks excluded due to arbitrary thresholds
+
+---
+
+### 1.2 Fix PG Scoring Inversion
+
+**Problem:** Procter & Gamble scores 35.5 (should be 55-60 based on fundamentals).
+
+**Investigation workflow:**
+```python
+def debug_pg_scoring():
+    """
+    Compare PG's raw metrics vs percentile rankings vs final score.
+    
+    Hypothesis: Mature consumer staples penalized by growth-oriented weights.
+    """
+    
+    ticker = 'PG'
+    
+    # Fetch raw metrics
+    raw_metrics = {
+        'revenue_growth': get_revenue_growth(ticker),
+        'operating_margin': get_operating_margin(ticker),
+        'roe': get_roe(ticker),
+        'current_ratio': get_current_ratio(ticker),
+        'debt_to_equity': get_debt_to_equity(ticker),
+        'altman_z': get_altman_z(ticker)
+    }
+    
+    # Calculate percentile ranks vs universe
+    percentile_ranks = {
+        metric: calculate_percentile_rank(value, universe_values[metric])
+        for metric, value in raw_metrics.items()
+    }
+    
+    # Apply quality weights
+    weighted_scores = {
+        metric: percentile_ranks[metric] * QUALITY_WEIGHTS[metric]
+        for metric in percentile_ranks
+    }
+    
+    final_score = sum(weighted_scores.values())
+    
+    # Output diagnostic
+    print(f"PG Quality Score Breakdown:")
+    print(f"Raw Metrics: {raw_metrics}")
+    print(f"Percentile Ranks: {percentile_ranks}")
+    print(f"Weighted Scores: {weighted_scores}")
+    print(f"Final Score: {final_score}")
+    
+    # Compare to expected blue chip (MSFT, KO, JNJ)
+    for comparable in ['MSFT', 'KO', 'JNJ']:
+        print(f"\n{comparable} for comparison: {calculate_quality_score(comparable)}")
+```
+
+**Potential fixes:**
+1. **If growth weight too high:** Reduce revenue_growth weight from 0.20 to 0.10 for mature sectors
+2. **If margin calculation wrong:** Verify operating_margin percentile calculation
+3. **If sector-specific issue:** Add sector adjustments (Consumer Defensive gets margin boost)
+
+**Success criteria:**
+- PG scores 50-65 (aligned with KO, JNJ)
+- No other blue chips show score inversions
+- Documented explanation for any remaining anomalies
+
+---
+
+### 1.3 Add Missing Quality Stocks
+
+**Target additions (assuming filters fixed):**
+
+**Financials:**
+- JPM (JP Morgan) - Tier 1 bank, diversified revenue
+- WFC (Wells Fargo) - Retail banking, turnaround story
+- USB (US Bancorp) - Regional bank, conservative underwriting
+
+**Consumer Defensive:**
+- WMT (Walmart) - Recession-resistant, scale moat
+
+**Utilities (if scoring allows):**
+- SO (Southern Company) - Regulated utility, 4%+ dividend
+- DUK (Duke Energy) - Similar profile to SO
+- NEE (NextEra Energy) - Renewable energy leader
+
+**Expected universe after Phase 1:**
+- Current: 18 stocks
+- Target: 28-30 stocks
+- Sectors: 8-9 (adding utilities if viable)
+- Quality distribution: 
+  - Elite (75+): 3-4 stocks
+  - Very Good (60-74): 8-10 stocks
+  - Good (50-59): 10-12 stocks
+  - Acceptable (40-49): 5-6 stocks
+
+**Validation check:**
+```python
+def validate_final_universe():
+    """
+    Ensure universe meets strategic requirements.
+    """
+    universe = load_universe()
+    
+    checks = {
+        'total_stocks': len(universe) >= 25,
+        'sector_diversity': len(set([s.sector for s in universe])) >= 7,
+        'has_blue_chips': all([ticker in universe for ticker in 
+                               ['MSFT', 'GOOGL', 'KO', 'PG', 'JNJ']]),
+        'quality_distribution': sum([1 for s in universe if s.score >= 60]) >= 8,
+        'no_china_adrs_top10': all([s.ticker not in ['PDD', 'BABA', 'JD'] 
+                                     for s in universe[:10]]),
+        'max_per_sector': max([count_sector(s) for s in SECTORS]) <= 5
+    }
+    
+    return all(checks.values()), checks
+```
+
+---
+
+## PHASE 2: AUTOMATE MANUAL TASKS (Week 2-3)
+**Goal:** Eliminate repetitive checks, free up cognitive bandwidth
+**Time investment:** 3-4 hours to build, saves 20-30 min/week ongoing
+**Expected ROI:** Zero manual errors, faster decision-making
+
+### 2.1 Earnings Calendar Automation
+
+**Current pain:** Manually checking TradingView/Yahoo Finance for earnings dates before each trade.
+
+**Solution:** Weekly email report of upcoming earnings.
+
+```python
+# earnings_monitor.py
+import schedule
+import time
+from datetime import datetime, timedelta
+from fmp_client import create_fetcher
+from universe import WHEEL_UNIVERSE
+
+def check_upcoming_earnings():
+    """
+    Weekly Sunday 9:00 AM SGT check.
+    
+    Email format:
+    Subject: "Earnings Alert - Week of Jan 27"
+    
+    AVOID NEW CSPs (Earnings <14 days):
+    - MSFT: Jan 30 (3 days away)
+    - AAPL: Feb 3 (7 days away)
+    
+    SAFE TO TRADE:
+    - GOOGL: Earnings not until Apr 15
+    - V: Earnings not until Mar 1
+    [... rest of universe ...]
+    """
+    
+    fetcher = create_fetcher()
+    today = datetime.now()
+    horizon = today + timedelta(days=45)  # Look 45 days ahead (matches max DTE)
+    
+    # Fetch earnings calendar
+    calendar = fetcher.get_earnings_calendar(
+        from_date=today.strftime('%Y-%m-%d'),
+        to_date=horizon.strftime('%Y-%m-%d')
+    )
+    
+    # Filter to universe
+    universe_earnings = [
+        e for e in calendar 
+        if e['symbol'] in WHEEL_UNIVERSE
+    ]
+    
+    # Categorize by urgency
+    avoid_list = []  # <14 days
+    caution_list = []  # 14-30 days
+    safe_list = []  # >30 days or no earnings in window
+    
+    for ticker in WHEEL_UNIVERSE:
+        ticker_earnings = [e for e in universe_earnings if e['symbol'] == ticker]
+        
+        if not ticker_earnings:
+            safe_list.append((ticker, 'No earnings in next 45 days'))
+        else:
+            days_until = (datetime.strptime(ticker_earnings[0]['date'], '%Y-%m-%d') - today).days
+            
+            if days_until < 14:
+                avoid_list.append((ticker, ticker_earnings[0]['date'], days_until))
+            elif days_until < 30:
+                caution_list.append((ticker, ticker_earnings[0]['date'], days_until))
+            else:
+                safe_list.append((ticker, ticker_earnings[0]['date']))
+    
+    # Format email
+    email_body = format_earnings_email(avoid_list, caution_list, safe_list)
+    send_email(to='your_email@gmail.com', subject=f'Earnings Alert - Week of {today.strftime("%b %d")}', 
+               body=email_body)
+
+# Run every Sunday at 9:00 AM SGT
+schedule.every().sunday.at("09:00").do(check_upcoming_earnings)
+
+while True:
+    schedule.run_pending()
+    time.sleep(3600)  # Check every hour
+```
+
+**Deployment:**
+- Run as cron job on local machine or free tier cloud (Heroku, Render.com)
+- Uses FMP's `/v3/earning_calendar` endpoint (~7 API calls/week)
+- Email service: Gmail SMTP (free) or SendGrid (free tier)
+
+**Success criteria:**
+- Zero manual earnings checks required
+- Email arrives every Sunday before screening session
+- Zero false positives (no stocks flagged incorrectly)
+
+---
+
+### 2.2 VIX Regime Email Alerts
+
+**Current pain:** Missing mid-week volatility spikes that create high-IV opportunities.
+
+**Solution:** Real-time VIX threshold alerts.
+
+```python
+# vix_monitor.py
+import schedule
+from fmp_client import create_fetcher
+
+VIX_THRESHOLDS = {
+    'stop_trading': 14,
+    'caution': 18,
+    'aggressive': 25
+}
+
+last_regime = None  # Track regime changes
+
+def check_vix_regime():
+    """
+    Run every 4 hours during market hours (10:30 PM - 5:00 AM SGT).
+    
+    Email triggers:
+    - VIX crosses from <14 to >14: "VIX spiked to 15.2 - RESUME TRADING"
+    - VIX crosses 18: "VIX at 19.1 - Normal deployment approved"
+    - VIX crosses 25: "VIX at 26.3 - AGGRESSIVE DEPLOYMENT (150% size)"
+    - VIX falls below 18: "VIX dropped to 17.2 - Reduce to 50% size"
+    - VIX falls below 14: "VIX at 13.5 - STOP TRADING (premium too low)"
+    """
+    
+    global last_regime
+    
+    fetcher = create_fetcher()
+    vix_data = fetcher.get_quote('^VIX')
+    current_vix = vix_data['price']
+    
+    # Determine current regime
+    if current_vix < VIX_THRESHOLDS['stop_trading']:
+        current_regime = 'STOP'
+    elif current_vix < VIX_THRESHOLDS['caution']:
+        current_regime = 'CAUTION'
+    elif current_vix < VIX_THRESHOLDS['aggressive']:
+        current_regime = 'NORMAL'
+    else:
+        current_regime = 'AGGRESSIVE'
+    
+    # Alert on regime change
+    if current_regime != last_regime and last_regime is not None:
+        alert_message = generate_regime_alert(current_vix, current_regime, last_regime)
+        send_email(to='your_email@gmail.com', 
+                   subject=f'VIX REGIME CHANGE: {last_regime} → {current_regime}',
+                   body=alert_message)
+    
+    last_regime = current_regime
+
+def generate_regime_alert(vix, new_regime, old_regime):
+    """
+    Generate actionable alert message.
+    """
+    messages = {
+        'STOP': f"VIX dropped to {vix:.1f} - STOP TRADING until VIX >14\nPremium too low for edge.",
+        'CAUTION': f"VIX at {vix:.1f} - CAUTION ZONE\nUse 50% position sizes ($3,300-4,400 per trade).",
+        'NORMAL': f"VIX at {vix:.1f} - NORMAL DEPLOYMENT\nFull position sizes ($6,700-8,900 per trade).",
+        'AGGRESSIVE': f"VIX at {vix:.1f} - AGGRESSIVE DEPLOYMENT\n150% position sizes ($10,000-13,000 per trade).\n\nRun screener immediately for opportunities."
+    }
+    
+    return messages[new_regime]
+
+# Run every 4 hours during market hours
+schedule.every(4).hours.do(check_vix_regime)
+```
+
+**Deployment:**
+- Same infrastructure as earnings monitor
+- Uses `/quote/^VIX` endpoint (~6 API calls/day during market hours)
+- Consider Telegram bot instead of email for faster alerts
+
+**Success criteria:**
+- Catch VIX spike from 16 → 22 mid-week (opportunity to deploy)
+- Alert arrives within 4 hours of threshold cross
+- No false alerts (regime changes only)
+
+---
+
+## PHASE 3: PERFORMANCE MEASUREMENT (Week 3-4)
+**Goal:** Build feedback loop to validate strategy assumptions
+**Time investment:** 2 hours to build template, 5 min/week to maintain
+**Expected ROI:** Empirical win rate, return per trade, strategy refinement data
+
+### 3.1 Trade Journal Template
+
+**Structure:** Google Sheets with automatic calculations.
+
+**Columns:**
+
+| Entry Date | Ticker | Type | Strike | DTE | Delta | IV Rank | VIX | Premium | Contracts | Capital | Exit Date | Exit Type | Exit P&L | Days Held | Return % | Notes |
+|------------|--------|------|--------|-----|-------|---------|-----|---------|-----------|---------|-----------|-----------|----------|-----------|----------|-------|
+| 2026-01-26 | MSFT | CSP | 420 | 35 | 0.25 | 62 | 19.2 | $3.50 | 2 | $8,400 | 2026-02-10 | 50% profit | +$350 | 15 | 4.2% | VIX spike entry |
+
+**Calculated metrics (auto-update):**
+```
+Win Rate = Profitable Trades / Total Closed Trades
+Avg Win = Average P&L of winning trades
+Avg Loss = Average P&L of losing trades
+Avg Return per Trade = Total P&L / Total Capital Deployed
+Win/Loss Ratio = Avg Win / Abs(Avg Loss)
+Expectancy = (Win Rate × Avg Win) - (Loss Rate × Avg Loss)
+
+Breakdown by:
+- Entry VIX regime (Low/Medium/High)
+- Entry IV Rank (<50, 50-60, 60-70, >70)
+- DTE bucket (30-35, 36-40, 41-45)
+- Exit type (50% profit, 21 DTE, Stop loss, Max loss at 7 DTE)
+```
+
+**Sample analysis questions after 30 trades:**
+1. Does win rate actually hit 70-75%?
+2. Is average return per trade 1-1.5%?
+3. Do VIX >22 entries outperform VIX 18-22 entries?
+4. Does IV Rank >60 outperform IV Rank 50-60?
+5. Are any sectors consistently underperforming?
+
+**Template creation:**
+```python
+# generate_journal_template.py
+import pandas as pd
+
+columns = [
+    'entry_date', 'ticker', 'type', 'strike', 'dte', 'delta', 
+    'iv_rank', 'vix', 'premium', 'contracts', 'capital',
+    'exit_date', 'exit_type', 'exit_pl', 'days_held', 'return_pct', 'notes'
+]
+
+df = pd.DataFrame(columns=columns)
+
+# Add example trade
+example_trade = {
+    'entry_date': '2026-01-26',
+    'ticker': 'MSFT',
+    'type': 'CSP',
+    'strike': 420,
+    'dte': 35,
+    'delta': 0.25,
+    'iv_rank': 62,
+    'vix': 19.2,
+    'premium': 3.50,
+    'contracts': 2,
+    'capital': 8400,
+    'exit_date': '2026-02-10',
+    'exit_type': '50% profit',
+    'exit_pl': 350,
+    'days_held': 15,
+    'return_pct': 4.2,
+    'notes': 'VIX spike entry, closed early per Rule 4'
+}
+
+df = df.append(example_trade, ignore_index=True)
+
+# Export to Google Sheets or CSV
+df.to_csv('trade_journal_template.csv', index=False)
+print("Template created. Import to Google Sheets and add formulas for calculated metrics.")
+```
+
+**Success criteria:**
+- Every trade journaled within 24 hours
+- 30+ trades logged before making strategy changes
+- Can answer: "What's my actual win rate?" with data, not estimates
+
+---
+
+### 3.2 Position Tracking Dashboard
+
+**Purpose:** Monitor assigned positions for covered call timing.
+
+**Structure:** Google Sheets tracking cost basis and exit opportunities.
+
+**Columns:**
+
+| Ticker | Assignment Date | Shares | Cost Basis | Current Price | Unrealized P&L | Days Held | Current IV Rank | Next Earnings | Covered Call Candidate? | Notes |
+|--------|----------------|--------|------------|---------------|----------------|-----------|-----------------|---------------|------------------------|-------|
+| AAPL | 2026-01-20 | 100 | $180.00 | $185.00 | +$500 | 6 | 45 | 2026-04-15 | No (IV too low) | Wait for IVP >50 |
+
+**Automated updates:**
+```python
+# position_tracker.py
+def update_assigned_positions():
+    """
+    Weekly Sunday update - fetch current prices and IV ranks.
+    
+    Outputs:
+    - Covered call candidates (IVP >50, profit >3%, earnings >45 days)
+    - Stop loss warnings (loss >10%)
+    - Thesis review flags (held >90 days)
+    """
+    
+    positions = load_assigned_positions()  # From Google Sheets
+    fetcher = create_fetcher()
+    
+    for position in positions:
+        # Update current price
+        quote = fetcher.get_quote(position.ticker)
+        position.current_price = quote['price']
+        
+        # Calculate P&L
+        position.unrealized_pl = (quote['price'] - position.cost_basis) * position.shares
+        position.unrealized_pl_pct = (quote['price'] / position.cost_basis - 1) * 100
+        
+        # Check covered call criteria
+        iv_rank = calculate_iv_rank(position.ticker)  # From historical IV data
+        days_to_earnings = get_days_to_next_earnings(position.ticker)
+        
+        position.is_cc_candidate = (
+            iv_rank > 50 and 
+            position.unrealized_pl_pct > 3 and 
+            days_to_earnings > 45
+        )
+        
+        # Flag warnings
+        if position.unrealized_pl_pct < -10:
+            position.warning = 'STOP LOSS - Review thesis'
+        elif position.days_held > 90:
+            position.warning = 'Held 90+ days - Consider exit'
+        
+    # Write back to Google Sheets
+    save_positions(positions)
+    
+    # Email summary
+    candidates = [p for p in positions if p.is_cc_candidate]
+    warnings = [p for p in positions if p.warning]
+    
+    if candidates or warnings:
+        email_body = format_position_summary(candidates, warnings)
+        send_email(subject='Position Update - Covered Call Opportunities', body=email_body)
+```
+
+**Success criteria:**
+- All assigned positions tracked
+- Covered call opportunities identified systematically (not randomly)
+- No positions "forgotten" and held indefinitely
+
+---
+
+## PHASE 4: STRATEGY REFINEMENT (Month 2+)
+**Goal:** Use journal data to improve edge
+**Time investment:** Ongoing analysis as data accumulates
+**Expected ROI:** Higher win rate, better risk-adjusted returns
+
+### 4.1 IV Term Structure Filter
+
+**Hypothesis:** Selling front-month premium when term structure is in contango (near-term IV > far-term IV) improves win rate.
+
+**Implementation:**
+```python
+# Add to screener_wheel.py
+def check_iv_term_structure(ticker):
+    """
+    Compare 30-day IV vs 60-day IV.
+    
+    Signal: 30d IV > 60d IV = Contango (favorable for CSPs)
+    """
+    
+    # Fetch option chains (if available on FMP)
+    # Or use historical volatility as proxy
+    
+    iv_30d = get_implied_volatility(ticker, dte=30)
+    iv_60d = get_implied_volatility(ticker, dte=60)
+    
+    is_contango = iv_30d > iv_60d
+    term_structure_premium = (iv_30d / iv_60d - 1) * 100  # % premium
+    
+    return {
+        'is_contango': is_contango,
+        'premium': term_structure_premium
+    }
+
+# Add to weekly screening output
+for opportunity in screened_opportunities:
+    term_structure = check_iv_term_structure(opportunity.ticker)
+    opportunity.term_structure_signal = term_structure['is_contango']
+    opportunity.term_structure_premium = term_structure['premium']
+```
+
+**Analysis after 30 trades:**
+- Compare win rate: Contango entries vs normal entries
+- If contango entries have >5% higher win rate → make it mandatory filter
+- If no difference → remove from screening (avoid complexity)
+
+---
+
+### 4.2 Position Sizing by Conviction
+
+**Current:** Fixed 15-20% per position
+**Refinement:** Adjust by IV rank + quality score
+
+```python
+def calculate_position_size(ticker, iv_rank, vix_regime):
+    """
+    Dynamic sizing based on edge strength.
+    
+    Base size: $7,500 (17% of $44,500)
+    
+    Adjustments:
+    - IV Rank >70: +20% size (stronger edge)
+    - Quality Score >70: +10% size (better stock)
+    - VIX >25: +50% size (aggressive regime)
+    - VIX <18: -50% size (caution regime)
+    """
+    
+    base_size = 7500
+    
+    # IV rank adjustment
+    if iv_rank > 70:
+        iv_multiplier = 1.2
+    elif iv_rank > 60:
+        iv_multiplier = 1.1
+    else:
+        iv_multiplier = 1.0
+    
+    # Quality adjustment
+    quality_score = get_quality_score(ticker)
+    if quality_score > 70:
+        quality_multiplier = 1.1
+    else:
+        quality_multiplier = 1.0
+    
+    # VIX regime adjustment
+    if vix_regime == 'AGGRESSIVE':
+        vix_multiplier = 1.5
+    elif vix_regime == 'CAUTION':
+        vix_multiplier = 0.5
+    else:
+        vix_multiplier = 1.0
+    
+    final_size = base_size * iv_multiplier * quality_multiplier * vix_multiplier
+    
+    # Cap at 25% of capital
+    final_size = min(final_size, 11125)
+    
+    return final_size
+```
+
+**Implementation:** Only after 50+ trades show this improves risk-adjusted returns.
+
+---
+
+### 4.3 Quarterly Strategy Review
+
+**Schedule:** Every 3 months (after ~30-40 trades)
+
+**Review questions:**
+1. **Performance vs targets:**
+   - Win rate: Actual vs 70-75% target
+   - Monthly return: Actual vs 1-1.5% target
+   - Max drawdown: Did we exceed -10%?
+
+2. **Filter effectiveness:**
+   - Are IV Rank >50 entries outperforming?
+   - Is VIX regime filter working as expected?
+   - Should we raise IV Rank minimum to 60?
+
+3. **Universe quality:**
+   - Are any stocks consistently underperforming?
+   - Should we remove low performers? (e.g., if NU loses money 4/5 trades)
+   - Are we missing obvious opportunities? (stocks we wish were in universe)
+
+4. **Exit discipline:**
+   - Is 50% profit target optimal? (test 40% vs 60%)
+   - Is 21 DTE close-if-profitable working?
+   - Are we taking too many max losses at 7 DTE?
+
+5. **Opportunity cost:**
+   - What % of capital is deployed vs sitting idle?
+   - Are we missing good setups due to position limits?
+   - Should we expand to 6-8 positions if universe grows to 30 stocks?
+
+**Output:** Strategy refinement document with data-backed changes.
+
+---
+
+## FMP API USAGE PLAN (Optimized)
+
+**Weekly usage (Sunday screening):**
+- Fundamental data fetch: ~100 API calls (30 stocks × 3-4 endpoints)
+- Earnings calendar: ~1 call
+- VIX check: ~1 call
+- Total: ~102 calls/week
+
+**Weekly monitoring (earnings + VIX):**
+- Earnings calendar: 7 calls (daily check)
+- VIX regime: 42 calls (every 4 hours during market hours)
+- Total: ~49 calls/week
+
+**Monthly total: ~604 API calls (8% of 7,500 limit)**
+
+**Unutilized capacity: 6,896 calls/month**
+
+**Potential future uses (if strategy scales):**
+- Real-time news sentiment (if pattern of news-driven losses emerges)
+- Sector rotation tracking (if expanding universe to 50+ stocks)
+- Options chain data (if FMP adds this endpoint)
+
+**Current assessment:** 8% utilization is appropriate for systematic weekly strategy. 
+Adding daily monitoring would increase to ~25% utilization but risks overtrading.
+
+---
+
+## ANTI-ROADMAP: WHAT NOT TO BUILD
+
+**Explicitly rejected features:**
+
+1. ❌ **Daily news sentiment scanning**
+   - Reason: News is already priced into IV (double-counting)
+   - Conflicts with systematic approach (introduces discretion)
+   - Time sink with no proven edge
+
+2. ❌ **Institutional options flow tracking**
+   - Reason: Smart money flow ≠ retail CSP edge
+   - Most flow is 0-7 DTE (you're trading 30-45 DTE)
+   - Adds noise, not signal
+
+3. ❌ **Macro event prediction**
+   - Reason: VIX already incorporates macro expectations
+   - Trying to front-run your own system
+   - Historical backtests show macro timing doesn't work
+
+4. ❌ **Daily IV monitoring for "real-time spikes"**
+   - Reason: You're asleep during US market hours
+   - Weekly screening captures IV expansion over 5-7 day windows
+   - More frequent entries = less time for theta = lower win rate
+
+5. ❌ **Sector rotation detection**
+   - Reason: Already happens automatically (more sector stocks pass filters)
+   - Doesn't change deployment decision (still follow VIX regime)
+   - Analysis paralysis risk
+
+**Guiding principle:** Only build features that either:
+1. Remove a current bottleneck (universe size, manual checks)
+2. Measure actual performance (journaling, tracking)
+3. Have proven edge from backtesting/journaling data
+
+---
+
+## SUCCESS METRICS BY PHASE
+
+**Phase 1 (Week 2):**
+- ✅ Universe reaches 28-30 stocks
+- ✅ PG scores 50-65
+- ✅ JPM, WFC, USB, WMT included
+- ✅ All blue chips present or documented exclusion reason
+
+**Phase 2 (Week 3):**
+- ✅ Earnings email arrives every Sunday
+- ✅ VIX alert triggered on first regime change
+- ✅ Zero manual checks required for 2 consecutive weeks
+
+**Phase 3 (Week 4):**
+- ✅ Trade journal template created
+- ✅ First 5 trades logged with complete data
+- ✅ Position tracker monitoring 1+ assigned position (if any)
+
+**Phase 4 (Month 2+):**
+- ✅ 30+ trades journaled
+- ✅ Win rate calculated from real data
+- ✅ First quarterly review completed
+- ✅ 1+ strategy refinement implemented based on data
+
+---
+
+## IMPLEMENTATION SCHEDULE
+
+**Week 1:**
+- Monday: Run universe builder diagnostic, identify bottlenecks
+- Wednesday: Fix identified filters, test universe expansion
+- Friday: Validate 28-30 stock universe, debug PG scoring
+- Sunday: Run first screening with expanded universe
+
+**Week 2:**
+- Monday: Build earnings calendar automation script
+- Wednesday: Deploy earnings monitor, test email delivery
+- Friday: Build VIX regime alert script
+- Sunday: Receive first automated earnings email, run screening
+
+**Week 3:**
+- Monday: Create trade journal Google Sheets template
+- Wednesday: Set up position tracker dashboard
+- Friday: Deploy VIX monitor, confirm alerts working
+- Sunday: Log first week of trades in journal
+
+**Week 4:**
+- Monday-Friday: Execute 2-3 trades, journal all entries/exits
+- Sunday: First weekly review using journal data
+
+**Month 2+:**
+- Continue systematic execution
+- Accumulate 30+ trades before strategy changes
+- Quarterly review and refinement
+
+---
+
+## QUESTIONS TO ASK BEFORE ADDING ANY NEW FEATURE
+
+1. **Does this remove a bottleneck?**
+   - What specific constraint does it address?
+   - Is this constraint actually limiting performance?
+
+2. **Does this measure performance?**
+   - What metric does it track?
+   - Will this data inform future decisions?
+
+3. **Is there empirical evidence this works?**
+   - Has this been backtested?
+   - Do we have journal data supporting this?
+
+4. **What's the opportunity cost?**
+   - What am I not building instead?
+   - Does this complexity reduce execution quality?
+
+5. **Does this conflict with systematic approach?**
+   - Does it introduce discretion?
+   - Will this cause me to override rules?
+
+**If you can't answer "yes" to questions 1-3 and "no" to 4-5, don't build it.**
+
+---
+
+## FINAL PHILOSOPHY
+
+**Your edge is not in information gathering.**
+Your edge is in:
+1. Systematic execution during volatility spikes
+2. Disciplined exits at 50% profit
+3. Patient capital deployment (only VIX >14, IVP >50)
+4. Quality stock selection (would own for 3+ years)
+
+**This roadmap maximizes that edge by:**
+1. Expanding opportunity set (30 stocks vs 18)
+2. Eliminating manual errors (automation)
+3. Measuring actual performance (journaling)
+4. Avoiding complexity that degrades execution
+
+**Success = Boring, repeatable, profitable execution of a simple system.**
+
+Not: "Feeling busy with daily monitoring and news scanning."
