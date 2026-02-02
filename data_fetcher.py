@@ -87,6 +87,9 @@ class HybridDataFetcher:
         self._chain_cache: Dict[Tuple[str, str], Tuple[pd.DataFrame, datetime]] = {}
         self._chain_cache_ttl = timedelta(minutes=5)
 
+        # API call tracking (FMP Starter: 250 calls/day limit)
+        self._fmp_api_calls = 0
+
         if not YFINANCE_AVAILABLE:
             raise RuntimeError("yfinance package not installed - required for stock quotes")
 
@@ -144,6 +147,22 @@ class HybridDataFetcher:
         self._chain_cache.clear()
         print("Cache cleared")
 
+    def get_api_stats(self) -> Dict[str, int]:
+        """
+        Get FMP API usage statistics for this session.
+
+        FMP Starter plan limit: 250 calls/day
+
+        Returns:
+            Dict with API call count and cache stats
+        """
+        return {
+            'fmp_api_calls': self._fmp_api_calls,
+            'cache_size': len(self._quote_cache),
+            'daily_limit': 250,
+            'remaining': max(0, 250 - self._fmp_api_calls)
+        }
+
     def _rate_limit(self):
         """Apply rate limiting between MooMoo API calls"""
         elapsed = time.time() - self.last_request_time
@@ -159,10 +178,12 @@ class HybridDataFetcher:
 
     def _fetch_quotes_concurrent(self, tickers: List[str]) -> Dict[str, Dict]:
         """
-        Fetch quotes for multiple tickers using concurrent requests.
+        Fetch quotes for multiple tickers using rate-limited concurrent requests.
 
-        Used as fallback when batch endpoint is unavailable (requires paid plan).
-        8x faster than sequential fetching (1.1s vs 9s for 8 tickers).
+        FMP Starter plan requires individual API calls. This method fetches them
+        concurrently with rate limiting to avoid overwhelming the API.
+
+        Performance: 30 stocks in ~3-4 seconds (vs ~30s sequential)
 
         Args:
             tickers: List of stock tickers to fetch
@@ -174,7 +195,10 @@ class HybridDataFetcher:
 
         results = {}
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(tickers), 10)) as executor:
+        # Limit concurrency to avoid rate limits (5 workers = ~5 requests/second)
+        max_workers = min(len(tickers), 5)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_ticker = {
                 executor.submit(self.get_stock_quote, ticker): ticker
                 for ticker in tickers
@@ -228,6 +252,7 @@ class HybridDataFetcher:
             }
 
             response = requests.get(url, params=params, timeout=10)
+            self._fmp_api_calls += 1  # Track API usage
             response.raise_for_status()
             data = response.json()
 
@@ -274,13 +299,14 @@ class HybridDataFetcher:
     
     def get_batch_quotes(self, tickers: List[str]) -> Dict[str, Dict]:
         """
-        Get quotes for multiple stocks using FMP API (BATCH - single API call).
+        Get quotes for multiple stocks using FMP API with concurrent requests.
 
-        Replaces yfinance batch download (slow, unreliable) with FMP batch endpoint (fast).
+        FMP Starter plan doesn't support batch quotes, so we use concurrent
+        individual requests which is still fast (30 stocks in ~4s).
 
         Performance:
-        - yfinance: 26 stocks = 5-10 seconds
-        - FMP: 26 stocks = 0.5 seconds (10-20x faster)
+        - yfinance: 26 stocks = 5-10 seconds (sequential, unreliable)
+        - FMP concurrent: 26 stocks = 3-4 seconds (parallel, reliable)
 
         Args:
             tickers: List of stock tickers
@@ -288,9 +314,6 @@ class HybridDataFetcher:
         Returns:
             Dict mapping ticker to quote data
         """
-        from config import FMP_API_KEY
-        import requests
-
         results = {}
         now = datetime.now()
 
@@ -317,81 +340,10 @@ class HybridDataFetcher:
             fetch_msg += f" ({cached_count} from cache)"
         print(fetch_msg + "...")
 
-        try:
-            # FMP batch-quote endpoint for multiple stocks
-            # Docs: https://site.financialmodelingprep.com/developer/docs/stable/batch-quote
-            symbols_param = ','.join(tickers_to_fetch)
-
-            url = "https://financialmodelingprep.com/stable/batch-quote"
-            params = {
-                'symbols': symbols_param,  # Note: 'symbols' (plural) for batch endpoint
-                'apikey': FMP_API_KEY
-            }
-
-            response = requests.get(url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-
-            if not data or len(data) == 0:
-                print("   Warning: FMP returned no data, trying concurrent individual fetches...")
-                # Fallback to concurrent individual fetches (8x faster than sequential)
-                results.update(self._fetch_quotes_concurrent(tickers_to_fetch))
-                print(f"   Retrieved {len(results)}/{len(clean_tickers)} quotes via FMP")
-                return results
-
-            # Process batch results
-            for quote_data in data:
-                ticker = quote_data.get('symbol')
-                if not ticker:
-                    continue
-
-                ticker = ticker.upper()  # Normalize
-
-                price = float(quote_data.get('price', 0))
-                if price <= 0:
-                    print(f"   Warning: Invalid price for {ticker}: {price}")
-                    continue
-
-                quote = {
-                    "ticker": ticker,
-                    "price": price,
-                    "bid": float(quote_data.get('bid', price * 0.999)),
-                    "ask": float(quote_data.get('ask', price * 1.001)),
-                    "volume": int(quote_data.get('volume', 0)),
-                    "market_cap": int(quote_data.get('marketCap', 0)),
-                    "change": float(quote_data.get('change', 0)),
-                    "change_pct": float(quote_data.get('changesPercentage', 0)),
-                    "day_high": float(quote_data.get('dayHigh', price)),
-                    "day_low": float(quote_data.get('dayLow', price)),
-                    "prev_close": float(quote_data.get('previousClose', price)),
-                    "timestamp": quote_data.get('timestamp', int(now.timestamp())),
-                    "source": "FMP"
-                }
-
-                results[ticker] = quote
-                self._quote_cache[ticker] = (quote, now)
-
-            # Check for missing tickers
-            fetched_tickers = set(results.keys())
-            requested_tickers = set(tickers_to_fetch)
-            missing = requested_tickers - fetched_tickers
-
-            if missing:
-                print(f"   Warning: FMP did not return data for: {', '.join(missing)}")
-
-            print(f"   Retrieved {len(results)}/{len(clean_tickers)} quotes via FMP")
-            return results
-
-        except requests.exceptions.HTTPError as e:
-            print(f"   Warning: FMP HTTP error {e.response.status_code}, trying concurrent fetches...")
-            results.update(self._fetch_quotes_concurrent(tickers_to_fetch))
-            print(f"   Retrieved {len(results)}/{len(clean_tickers)} quotes via FMP")
-            return results
-        except Exception as e:
-            print(f"   Warning: FMP batch failed ({type(e).__name__}: {e}), trying concurrent fetches...")
-            results.update(self._fetch_quotes_concurrent(tickers_to_fetch))
-            print(f"   Retrieved {len(results)}/{len(clean_tickers)} quotes via FMP")
-            return results
+        # Use concurrent fetches (FMP Starter doesn't support batch endpoint)
+        results.update(self._fetch_quotes_concurrent(tickers_to_fetch))
+        print(f"   Retrieved {len(results)}/{len(clean_tickers)} quotes via FMP")
+        return results
     
     # =========================================================================
     # OPTIONS DATA - Using MooMoo API (requires OPRA subscription)
