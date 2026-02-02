@@ -26,11 +26,11 @@ def print_banner():
 +===============================================================+
 |                                                               |
 |                     OPTIONS                                   |
-|                  INCOME SCANNER v2.0                          |
+|                  INCOME SCANNER v2.1                          |
 |                   Wheel Strategy                              |
 |                                                               |
-|  HYBRID MODE: Stock quotes via yfinance (FREE)                |
-|               Options data via MooMoo API (OPRA)              |
+|  PRO MODE: Stock quotes via FMP API (Real-time)               |
+|            Options data via MooMoo API (OPRA)                 |
 |                                                               |
 +===============================================================+
     """)
@@ -203,7 +203,7 @@ Examples:
                 print("\n[WARN] Could not connect to MooMoo OpenD.")
                 print("       Options data will not be available.")
                 print("       Make sure OpenD is running and you have OPRA subscription.")
-                print("\n       Stock quotes will still work via yfinance (FREE)")
+                print("\n       Stock quotes will still work via FMP API")
                 # Don't exit - we can still get stock quotes
         else:
             print("    Using mock data (no live market connection)")
