@@ -259,3 +259,65 @@ def strip_moomoo_prefix(symbol: str) -> str:
     if symbol.startswith("US."):
         return symbol[3:]
     return symbol
+
+# =============================================================================
+# STOCK METADATA
+# Derived from WHEEL_UNIVERSE comments — company name, sector, quality score
+# Used by earnings_monitor.py and other scripts
+# =============================================================================
+
+STOCK_METADATA = {
+    "V": {"company": "Visa Inc.", "sector": "Financial Services", "quality_score": 80.9},
+    "TSM": {"company": "Taiwan Semiconductor Manufacturing", "sector": "Technology", "quality_score": 80.9},
+    "KO": {"company": "The Coca-Cola Company", "sector": "Consumer Defensive", "quality_score": 78.6},
+    "MSFT": {"company": "Microsoft Corporation", "sector": "Technology", "quality_score": 74.6},
+    "PG": {"company": "The Procter & Gamble Company", "sector": "Consumer Defensive", "quality_score": 74.2},
+    "GOOGL": {"company": "Alphabet Inc.", "sector": "Technology", "quality_score": 73.5},
+    "DECK": {"company": "Deckers Outdoor Corporation", "sector": "Consumer Cyclical", "quality_score": 72.6},
+    "MRK": {"company": "Merck & Co., Inc.", "sector": "Healthcare", "quality_score": 70.2},
+    "SCHW": {"company": "The Charles Schwab Corporation", "sector": "Financial Services", "quality_score": 68.4},
+    "EOG": {"company": "EOG Resources, Inc.", "sector": "Energy", "quality_score": 67.5},
+    "ABT": {"company": "Abbott Laboratories", "sector": "Healthcare", "quality_score": 66.4},
+    "BAM": {"company": "Brookfield Asset Management", "sector": "Financial Services", "quality_score": 66.1},
+    "MU": {"company": "Micron Technology, Inc.", "sector": "Technology", "quality_score": 65.6},
+    "CRS": {"company": "Carpenter Technology Corporation", "sector": "Industrials", "quality_score": 63.6},
+    "KGC": {"company": "Kinross Gold Corporation", "sector": "Basic Materials", "quality_score": 63.4},
+    "AMAT": {"company": "Applied Materials, Inc.", "sector": "Technology", "quality_score": 63.2},
+    "TT": {"company": "Trane Technologies plc", "sector": "Industrials", "quality_score": 61.7},
+    "KVUE": {"company": "Kenvue Inc.", "sector": "Consumer Defensive", "quality_score": 61.4},
+    "NFLX": {"company": "Netflix, Inc.", "sector": "Communication Services", "quality_score": 61.1},
+    "NU": {"company": "Nu Holdings Ltd.", "sector": "Financial Services", "quality_score": 61.1},
+    "AEM": {"company": "Agnico Eagle Mines Limited", "sector": "Basic Materials", "quality_score": 60.9},
+    "DOV": {"company": "Dover Corporation", "sector": "Industrials", "quality_score": 59.0},
+    "NXT": {"company": "Nextpower Inc.", "sector": "Technology", "quality_score": 59.0},
+    "TXN": {"company": "Texas Instruments Incorporated", "sector": "Technology", "quality_score": 57.6},
+    "DFS": {"company": "Discover Financial Services", "sector": "Financial Services", "quality_score": 57.2},
+    "BSX": {"company": "Boston Scientific Corporation", "sector": "Healthcare", "quality_score": 56.9},
+    "COIN": {"company": "Coinbase Global, Inc.", "sector": "Financial Services", "quality_score": 56.2},
+    "SYF": {"company": "Synchrony Financial", "sector": "Financial Services", "quality_score": 54.6},
+    "K": {"company": "Kellanova", "sector": "Consumer Defensive", "quality_score": 53.9},
+    "JNJ": {"company": "Johnson & Johnson", "sector": "Healthcare", "quality_score": 53.9},
+    "HOLX": {"company": "Hologic, Inc.", "sector": "Healthcare", "quality_score": 53.8},
+    "QCOM": {"company": "QUALCOMM Incorporated", "sector": "Technology", "quality_score": 53.0},
+    "BX": {"company": "Blackstone Inc.", "sector": "Financial Services", "quality_score": 52.8},
+    "PYPL": {"company": "PayPal Holdings, Inc.", "sector": "Financial Services", "quality_score": 51.1},
+    "INTU": {"company": "Intuit Inc.", "sector": "Technology", "quality_score": 51.1},
+    "RF": {"company": "Regions Financial Corporation", "sector": "Financial Services", "quality_score": 50.0},
+    "PDD": {"company": "PDD Holdings Inc.", "sector": "Consumer Cyclical", "quality_score": 49.9},
+    "WMT": {"company": "Walmart Inc.", "sector": "Consumer Defensive", "quality_score": 49.8},
+    "PFE": {"company": "Pfizer Inc.", "sector": "Healthcare", "quality_score": 49.4},
+    "TTD": {"company": "The Trade Desk, Inc.", "sector": "Technology", "quality_score": 48.1},
+}
+
+
+def get_stock_metadata(ticker: str) -> dict:
+    """
+    Get metadata for a ticker: company name, sector, quality score, capital required.
+    Returns a default dict if ticker not found.
+    """
+    base = STOCK_METADATA.get(ticker, {
+        "company": ticker,
+        "sector": "Unknown",
+        "quality_score": 0.0,
+    })
+    return {**base, "capital_required": CAPITAL_REQUIREMENTS.get(ticker, 0)}
