@@ -60,77 +60,79 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 def fetch_earnings_for_ticker(ticker: str) -> Optional[str]:
-    """
-    Fetch next FUTURE earnings date for a single ticker using FMP stable API.
-
-    Args:
-        ticker: Stock ticker symbol
-
-    Returns:
-        Earnings date string (YYYY-MM-DD) or None if not found/no future earnings
-    """
-    url = "https://financialmodelingprep.com/stable/earnings-calendar"
-    params = {
-        'symbol': ticker,
-        'apikey': FMP_API_KEY
-    }
-
-    today = datetime.now().date()
-
-    try:
-        response = requests.get(url, params=params, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-
-        if data and len(data) > 0:
-            # Look for FUTURE earnings dates
-            for event in data:
-                date_str = event.get('date')
-                if date_str:
-                    try:
-                        earnings_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                        if earnings_date > today:
-                            return date_str
-                    except ValueError:
-                        continue
-            return None
-        return None
-
-    except Exception as e:
-        logger.debug(f"Error fetching earnings for {ticker}: {e}")
-        return None
+    """Thin wrapper — delegates to batch fetch for single ticker."""
+    result = fetch_earnings_batch([ticker], delay=0)
+    return result.get(ticker)
 
 
 def fetch_earnings_batch(tickers: List[str], delay: float = 0.5) -> Dict[str, str]:
     """
-    Fetch earnings dates for multiple tickers with rate limiting.
+    Fetch future earnings dates for multiple tickers via FMP bulk calendar.
+
+    Paginates through the /stable/earnings-calendar endpoint with a 90-day
+    future window (from/to params) and filters client-side to the given tickers.
+    Stops early once all tickers are found or pages are exhausted.
 
     Args:
         tickers: List of ticker symbols
-        delay: Delay between API calls (seconds)
+        delay: Unused (kept for API compatibility)
 
     Returns:
-        Dict mapping ticker -> earnings date string
+        Dict mapping ticker -> earliest future earnings date string (YYYY-MM-DD)
     """
-    import time
-
     earnings_map: Dict[str, str] = {}
-    total = len(tickers)
+    ticker_set = set(tickers)
+    today = datetime.now().date()
+    date_from = today + timedelta(days=1)
+    date_to = today + timedelta(days=90)
 
-    logger.info(f"Fetching earnings for {total} tickers...")
+    logger.info(f"Fetching earnings calendar {date_from} to {date_to} for {len(tickers)} tickers...")
 
-    for i, ticker in enumerate(tickers, 1):
-        if i % 10 == 0:
-            logger.info(f"  Progress: {i}/{total} tickers")
+    max_pages = 5
+    url = "https://financialmodelingprep.com/stable/earnings-calendar"
 
-        date = fetch_earnings_for_ticker(ticker)
-        if date:
-            earnings_map[ticker] = date
+    for page in range(max_pages):
+        try:
+            params = {
+                'from': date_from.strftime('%Y-%m-%d'),
+                'to': date_to.strftime('%Y-%m-%d'),
+                'apikey': FMP_API_KEY,
+                'page': page,
+            }
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
 
-        if i < total:
-            time.sleep(delay)
+            if not data:
+                logger.info(f"Page {page}: empty, stopping pagination")
+                break
 
-    logger.info(f"Found earnings dates for {len(earnings_map)}/{total} tickers")
+            # Build map: ticker -> earliest future date
+            for event in data:
+                symbol = event.get('symbol')
+                date_str = event.get('date')
+                if symbol not in ticker_set or not date_str:
+                    continue
+                try:
+                    earnings_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    if earnings_date > today:
+                        # Keep earliest date if multiple entries
+                        if symbol not in earnings_map:
+                            earnings_map[symbol] = date_str
+                except ValueError:
+                    continue
+
+            logger.info(f"Page {page}: {len(data)} results, {len(earnings_map)}/{len(tickers)} matched")
+
+            # Stop early if all tickers found or last page
+            if len(earnings_map) >= len(tickers) or len(data) < 4000:
+                break
+
+        except Exception as e:
+            logger.warning(f"Error fetching earnings page {page}: {e}")
+            break
+
+    logger.info(f"Found earnings dates for {len(earnings_map)}/{len(tickers)} tickers")
     return earnings_map
 
 

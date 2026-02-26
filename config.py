@@ -2,6 +2,8 @@
 Configuration settings for Options Scanner
 Strategy parameters derived from Wheel Strategy Guide
 """
+import platform
+import subprocess
 
 # =============================================================================
 # FINANCIAL MODELING PREP API SETTINGS
@@ -14,7 +16,40 @@ FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 # MOOMOO API SETTINGS
 # =============================================================================
 
-MOOMOO_HOST = "127.0.0.1"
+
+def _get_wsl2_host_ip() -> str:
+    """Resolve the Windows host IP when running inside WSL2.
+
+    OpenD runs on the Windows host, so WSL2 cannot reach it via 127.0.0.1.
+    The host IP is the default gateway shown by ``ip route``.
+    """
+    try:
+        result = subprocess.run(
+            ['ip', 'route'], capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            if 'default' in line:
+                return line.split()[2]
+    except Exception:
+        pass
+    return '172.24.32.1'  # static fallback
+
+
+def _get_moomoo_host() -> str:
+    """Return the appropriate MooMoo host IP for the current environment."""
+    # Inside WSL2 on Linux, resolve the Windows host gateway
+    if platform.system() == 'Linux':
+        try:
+            with open('/proc/version', 'r') as f:
+                if 'microsoft' in f.read().lower():
+                    return _get_wsl2_host_ip()
+        except FileNotFoundError:
+            pass
+    # Native Windows or other — OpenD is on localhost
+    return '127.0.0.1'
+
+
+MOOMOO_HOST = _get_moomoo_host()
 MOOMOO_PORT = 11111
 
 # Rate limiting (MooMoo recommends 3 seconds between option chain calls)
