@@ -6,7 +6,8 @@ Generates weekly earnings calendar CSV for trade planning and journaling.
 Categorizes WHEEL_UNIVERSE stocks by earnings proximity:
 - AVOID: Earnings <14 days away (do not open new CSPs)
 - CAUTION: Earnings 14-30 days away (monitor closely)
-- SAFE: Earnings >30 days away or no scheduled earnings
+- SAFE: Earnings >30 days away (confirmed date)
+- UNVERIFIED: No/invalid date from FMP - FAIL CLOSED, verify manually (never auto-SAFE)
 
 Output:
 - CSV file: reports/earnings/earnings_calendar_YYYY-MM-DD.csv
@@ -69,7 +70,10 @@ def fetch_earnings_for_ticker(ticker: str) -> Optional[str]:
     Returns:
         Earnings date string (YYYY-MM-DD) or None if not found/no future earnings
     """
-    url = "https://financialmodelingprep.com/stable/earnings-calendar"
+    # Per-symbol endpoint: /stable/earnings actually filters by symbol. The bulk
+    # /earnings-calendar endpoint does NOT (it ignores `symbol` and caps at 4000 rows),
+    # which silently dropped almost every name and produced the dark "all SAFE" feed.
+    url = "https://financialmodelingprep.com/stable/earnings"
     params = {
         'symbol': ticker,
         'apikey': FMP_API_KEY
@@ -82,18 +86,22 @@ def fetch_earnings_for_ticker(ticker: str) -> Optional[str]:
         response.raise_for_status()
         data = response.json()
 
-        if data and len(data) > 0:
-            # Look for FUTURE earnings dates
+        if isinstance(data, list) and data:
+            # Earliest FUTURE earnings date for THIS ticker
+            future_dates = []
             for event in data:
+                if event.get('symbol') != ticker:   # defensive; endpoint pre-filters
+                    continue
                 date_str = event.get('date')
-                if date_str:
-                    try:
-                        earnings_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                        if earnings_date > today:
-                            return date_str
-                    except ValueError:
-                        continue
-            return None
+                if not date_str:
+                    continue
+                try:
+                    earnings_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    continue
+                if earnings_date > today:
+                    future_dates.append(date_str)
+            return min(future_dates) if future_dates else None
         return None
 
     except Exception as e:
@@ -155,6 +163,14 @@ def categorize_earnings(universe: List[str]) -> List[Dict]:
     # Fetch earnings for each ticker
     universe_earnings = fetch_earnings_batch(universe, delay=0.5)
 
+    # Fail-closed feed check: zero coverage across the whole universe means the FMP feed
+    # is down (quota/key/endpoint), NOT that every stock is earnings-free. Warn loudly so
+    # a dark feed is never mistaken for "all clear".
+    if universe and len(universe_earnings) == 0:
+        print("\n   [ERROR] FMP returned ZERO earnings dates for the entire universe.")
+        print("           Feed is down (likely 250/day quota exhausted, bad key, or endpoint).")
+        print("           ALL names will be marked UNVERIFIED - do NOT trade off this report.")
+
     # Build full dataset with metadata
     results = []
 
@@ -199,11 +215,14 @@ def categorize_earnings(universe: List[str]) -> List[Dict]:
                     'capital_required': metadata['capital_required'],
                     'earnings_date': date_str,
                     'days_away': '',
-                    'status': 'SAFE',
-                    'notes': f'Invalid date format: {date_str}'
+                    'status': 'UNVERIFIED',
+                    'notes': f'UNVERIFIED - invalid date from FMP ({date_str}); verify manually'
                 })
         else:
-            # No future earnings found
+            # No date returned. This is AMBIGUOUS - it means either "no earnings in the
+            # horizon" OR "FMP fetch failed/empty". We cannot tell them apart, so we
+            # FAIL CLOSED: never fabricate SAFE from absent data (a name with earnings in
+            # the window would otherwise pass the hard earnings disqualifier).
             results.append({
                 'ticker': ticker,
                 'company': metadata['company'],
@@ -212,8 +231,8 @@ def categorize_earnings(universe: List[str]) -> List[Dict]:
                 'capital_required': metadata['capital_required'],
                 'earnings_date': '',
                 'days_away': '',
-                'status': 'SAFE',
-                'notes': 'No earnings in next 45 days'
+                'status': 'UNVERIFIED',
+                'notes': 'UNVERIFIED - no date returned by FMP; verify manually before trading'
             })
 
     return results
@@ -271,6 +290,7 @@ def print_summary(data: List[Dict]):
     """
     avoid = [d for d in data if d['status'] == 'AVOID']
     caution = [d for d in data if d['status'] == 'CAUTION']
+    unverified = [d for d in data if d['status'] == 'UNVERIFIED']
     safe = [d for d in data if d['status'] == 'SAFE']
 
     print("\n" + "="*70)
@@ -300,6 +320,15 @@ def print_summary(data: List[Dict]):
             print(f"   {stock['ticker']:<8} {stock['earnings_date']:<12} {days:>5}  {stock['sector']:<20}")
     else:
         print("   None")
+
+    # UNVERIFIED section - treat as DO NOT TRADE until manually confirmed
+    print(f"\n   UNVERIFIED - earnings unknown, DO NOT TRADE without manual check ({len(unverified)} stocks)")
+    if unverified:
+        unverified_tickers = [s['ticker'] for s in unverified]
+        for i in range(0, len(unverified_tickers), 10):
+            print(f"   {', '.join(unverified_tickers[i:i+10])}")
+    else:
+        print("   None - all names have confirmed earnings data")
 
     # SAFE section
     print(f"\n   SAFE TO TRADE ({len(safe)} stocks)")

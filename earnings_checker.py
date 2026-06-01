@@ -84,9 +84,12 @@ class EarningsChecker:
 
     def _fetch_full_calendar(self) -> Dict[str, Dict]:
         """
-        Fetch the full earnings calendar from FMP and index by ticker.
+        DEPRECATED — do not use. The bulk /earnings-calendar endpoint ignores `symbol`
+        and truncates to 4000 rows, so it silently drops most tickers and misses
+        near-term dates (this caused the "all UNVERIFIED" dark feed). Use the per-symbol
+        _fetch_symbol_earnings() instead. Retained only for reference.
 
-        FMP's earnings-calendar endpoint returns all stocks' earnings (past and future).
+        Fetch the full earnings calendar from FMP and index by ticker.
         We fetch once and cache in memory, then look up individual tickers.
 
         Returns:
@@ -170,6 +173,60 @@ class EarningsChecker:
             print(f"  [ERROR] FMP calendar fetch failed: {type(e).__name__}: {e}")
             return {}
 
+    def _fetch_symbol_earnings(self, ticker: str) -> Dict:
+        """
+        Fetch a single symbol's earnings via the per-symbol /stable/earnings endpoint.
+
+        This endpoint genuinely filters by `symbol` and returns that ticker's full
+        earnings history + estimates. The bulk /earnings-calendar endpoint does NOT
+        (it ignores `symbol` and caps at 4000 rows, dropping most names) — that was the
+        root cause of the "all UNVERIFIED" dark feed.
+
+        Returns:
+            {'last_earnings': datetime|None, 'next_earnings': datetime|None,
+             'status': 'found' | 'not_found' | 'error'}
+            status='error' on any network/HTTP failure (caller fails closed and does
+            NOT cache the result).
+        """
+        url = f"{self.fmp_base_url}/earnings"
+        params = {'symbol': ticker, 'apikey': self.fmp_api_key}
+        try:
+            response = requests.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+
+            if not isinstance(data, list) or not data:
+                return {'last_earnings': None, 'next_earnings': None, 'status': 'not_found'}
+
+            today = datetime.now()
+            last_earnings = None   # most recent past date
+            next_earnings = None   # earliest future date
+            for event in data:
+                if event.get('symbol') != ticker:   # defensive; endpoint should pre-filter
+                    continue
+                date_str = event.get('date')
+                if not date_str:
+                    continue
+                try:
+                    dt = datetime.strptime(date_str, '%Y-%m-%d')
+                except ValueError:
+                    continue
+                if dt <= today:
+                    if last_earnings is None or dt > last_earnings:
+                        last_earnings = dt
+                else:
+                    if next_earnings is None or dt < next_earnings:
+                        next_earnings = dt
+
+            return {'last_earnings': last_earnings, 'next_earnings': next_earnings, 'status': 'found'}
+
+        except requests.exceptions.HTTPError as e:
+            print(f"  [WARN] FMP earnings HTTP {e.response.status_code} for {ticker}")
+            return {'last_earnings': None, 'next_earnings': None, 'status': 'error'}
+        except Exception as e:
+            print(f"  [WARN] FMP earnings fetch failed for {ticker}: {type(e).__name__}: {e}")
+            return {'last_earnings': None, 'next_earnings': None, 'status': 'error'}
+
     def get_earnings_info(self, ticker: str, use_cache: bool = True) -> Dict:
         """
         Get earnings information for a ticker using FMP API.
@@ -200,43 +257,23 @@ class EarningsChecker:
                 result['next_earnings'] = datetime.fromisoformat(cached['next_earnings'])
             return result
 
-        # Look up in full calendar
-        calendar = self._fetch_full_calendar()
+        # Fetch this symbol's earnings (per-symbol endpoint actually filters by symbol,
+        # unlike the bulk earnings-calendar which ignores `symbol` and truncates to 4000 rows).
+        info = self._fetch_symbol_earnings(ticker)
 
-        if ticker in calendar:
-            info = calendar[ticker]
-
-            # Cache successful result
+        # Never cache a transient error: a quota/network blip must not stay sticky for
+        # the 12h TTL and keep the feed artificially dark.
+        if info['status'] != 'error':
             self.cache[ticker] = {
                 "last_earnings": info['last_earnings'].isoformat() if info['last_earnings'] else None,
                 "next_earnings": info['next_earnings'].isoformat() if info['next_earnings'] else None,
                 "cached_at": datetime.now().isoformat(),
                 "source": "FMP",
-                "status": "found"
+                "status": info['status'],
             }
             self._save_cache()
 
-            return {
-                'last_earnings': info['last_earnings'],
-                'next_earnings': info['next_earnings'],
-                'status': 'found'
-            }
-
-        # Ticker not in calendar
-        self.cache[ticker] = {
-            "last_earnings": None,
-            "next_earnings": None,
-            "cached_at": datetime.now().isoformat(),
-            "source": "FMP",
-            "status": "not_found"
-        }
-        self._save_cache()
-
-        return {
-            'last_earnings': None,
-            'next_earnings': None,
-            'status': 'not_found'
-        }
+        return info
 
     def get_next_earnings_date(self, ticker: str, use_cache: bool = True) -> Optional[datetime]:
         """
@@ -257,7 +294,7 @@ class EarningsChecker:
         ticker: str,
         expiration_date: datetime,
         buffer_days: int = 7,
-        allow_unverified: bool = True  # CRITICAL: Default changed to True (fail-open)
+        allow_unverified: bool = False  # FAIL-CLOSED: missing data => REJECT (never trade blind)
     ) -> Tuple[bool, Optional[datetime], str]:
         """
         Check if a stock is safe to trade (no earnings within window).
