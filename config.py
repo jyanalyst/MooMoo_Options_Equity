@@ -47,8 +47,16 @@ WHEEL_CONFIG = {
     # Earnings buffer
     "earnings_buffer_days": 7,
 
-    # Earnings validation (FAIL-OPEN MODE - FMP Migration)
-    "allow_unverified_earnings": True,  # Proceed with warning when FMP data unavailable (user verifies)
+    # Post-earnings IV-crush guard: selling premium just after a report means selling
+    # into an IV crush (cheap premium, negative EV). Per the strategy guide, a
+    # post-earnings entry is valid ONLY if IV Rank is CONFIRMED elevated (> threshold).
+    "earnings_recency_days": 10,        # treat <=N days since last report as crush-risk
+    "post_earnings_min_iv_rank": 40,    # required confirmed IV Rank to allow such a name
+
+    # Earnings validation (FAIL-CLOSED by default — never trade blind through earnings).
+    # Unverified earnings (FMP returned no date) are REJECTED. Override per-run with
+    # --allow-unverified if you will manually verify each name.
+    "allow_unverified_earnings": False,
 
     # Term structure (contango = favorable)
     "term_structure_check": True,
@@ -61,7 +69,7 @@ WHEEL_CONFIG = {
 EARNINGS_CONFIG = {
     "data_source": "FMP",  # Only FMP now (yfinance removed)
     "cache_expiry_hours": 12,  # Refresh earnings cache every 12 hours
-    "allow_unverified": True,  # Default: fail-open (proceed with warning)
+    "allow_unverified": False,  # Default: fail-closed (reject when no earnings date)
     "buffer_days": 7,  # Buffer days after expiration
 }
 

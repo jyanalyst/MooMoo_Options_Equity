@@ -42,7 +42,7 @@ class WheelScreener:
         self.data_fetcher = data_fetcher
         self.max_capital = max_capital
         # Default to config value if not explicitly specified
-        self.allow_unverified = allow_unverified if allow_unverified is not None else WHEEL_CONFIG.get("allow_unverified_earnings", True)
+        self.allow_unverified = allow_unverified if allow_unverified is not None else WHEEL_CONFIG.get("allow_unverified_earnings", False)
 
         # Backward compatibility: convert tier to approximate capital
         if tier is not None and max_capital is None:
@@ -109,15 +109,67 @@ class WheelScreener:
         
         # Step 4: Sort candidates by quality score
         candidates = sorted(candidates, key=lambda x: x.get('quality_score', 0), reverse=True)
-        
+
+        # Rejection breakdown - always shown so the candidate count is self-explaining
+        # (e.g. a dark FMP earnings feed shows up here as a wall of earnings rejections).
+        if rejected:
+            from collections import Counter
+            cats = Counter(self._reject_category(reason) for _, reason in rejected)
+            print(f"\nRejection breakdown ({len(candidates)} candidates, {len(rejected)} rejected):")
+            for cat, n in cats.most_common():
+                print(f"   {n:>3}  {cat}")
+            earnings_rejects = cats.get('Earnings unverified/conflict', 0)
+            if earnings_rejects >= max(5, len(rejected) // 2):
+                print("   -> Most rejections are earnings (fail-closed). If the FMP feed is "
+                      "down/over quota, restore it and re-scan; or use --allow-unverified "
+                      "to override (you must verify each name manually).")
+
         if verbose:
             print(f"\n{'='*60}")
             print(f"SCREENING COMPLETE")
             print(f"Candidates: {len(candidates)}")
             print(f"Rejected: {len(rejected)}")
             print(f"{'='*60}")
-        
+
         return candidates
+
+    def _is_post_earnings_crush(self, last_earnings, iv_method, iv_rank) -> bool:
+        """
+        True if the name is within the post-earnings IV-crush window WITHOUT confirmed
+        elevated IV. Per the strategy guide, a post-earnings entry is valid only if IV
+        Rank is still elevated (> post_earnings_min_iv_rank) - and that requires a
+        RELIABLE reading (iv_percentile, not warm-up). When IV can't be confirmed, we
+        reject conservatively rather than sell into a likely crush.
+        """
+        if last_earnings is None:
+            return False
+        days_since = (datetime.now() - last_earnings).days
+        if not (0 <= days_since <= self.config['earnings_recency_days']):
+            return False
+        iv_confirmed_elevated = (
+            iv_method == 'iv_percentile'
+            and iv_rank is not None
+            and iv_rank > self.config['post_earnings_min_iv_rank']
+        )
+        return not iv_confirmed_elevated
+
+    @staticmethod
+    def _reject_category(reason: str) -> str:
+        """Bucket a free-text reject reason into a coarse category for the breakdown."""
+        r = (reason or '').lower()
+        if 'crush' in r:
+            return 'Post-earnings IV crush'
+        if 'earnings' in r:
+            return 'Earnings unverified/conflict'
+        if 'dte' in r:
+            return 'No expiration in DTE range'
+        if 'expiration' in r:
+            return 'No option expirations'
+        if 'bid' in r:
+            return 'No options with valid bid'
+        if 'price' in r:
+            return 'Price out of range'
+        return 'Other'
     
     def _analyze_stock(self, ticker: str, quote: Dict, verbose: bool = True) -> Dict:
         """
@@ -200,7 +252,7 @@ class WheelScreener:
             if verbose:
                 print(f"         {exp}: {reason}")
 
-            if is_safe or 'UNVERIFIED' in reason:
+            if is_safe:
                 best_expiration = (exp, dte)
                 earnings_safe = True
                 result['earnings_status'] = reason
@@ -234,18 +286,39 @@ class WheelScreener:
             print(f"      -> IV Rank: {result['iv_rank']}% ({result.get('iv_method')})")
             print(f"      -> Term Structure: {result['term_structure']} ({result['term_structure_recommendation']})")
 
-        # IV Rank is now a SOFT filter - low IV Rank reduces score but doesn't reject
-        # This ensures we always get top 3 candidates even in low IV environments
+        # IV Rank is a SOFT filter - low IV Rank reduces score but doesn't reject.
+        # Skip the filter entirely while the metric is provisional (hv_proxy warm-up):
+        # an unreliable reading must neither reward nor penalize a candidate.
         iv_warning = None
-        if result['iv_rank'] is not None and result['iv_rank'] < self.config['iv_rank_min']:
+        iv_reliable = result.get('iv_method') != 'hv_proxy_provisional'
+        if iv_reliable and result['iv_rank'] is not None and result['iv_rank'] < self.config['iv_rank_min']:
             iv_warning = f"Low IV Rank ({result['iv_rank']:.1f}% < {self.config['iv_rank_min']}%)"
             result['iv_warning'] = iv_warning
 
         if verbose:
-            if iv_warning:
+            if not iv_reliable:
+                print(f"      [~] IV Rank PROVISIONAL (warm-up) - unavailable, excluded from scoring")
+            elif iv_warning:
                 print(f"      [!] IV Rank below threshold ({result['iv_rank']:.1f}%) - will reduce score")
             else:
                 print(f"      [OK] IV Rank filter passed")
+
+        # Post-earnings IV-crush guard. Reject names within the recency window unless IV
+        # Rank is CONFIRMED elevated - a 6-day post-earnings name with crushed implied vol
+        # (PDD) is selling cheap premium, the opposite of the strategy's edge.
+        last_earnings = self.earnings_checker.get_earnings_info(ticker).get('last_earnings')
+        if self._is_post_earnings_crush(last_earnings, result.get('iv_method'), result.get('iv_rank')):
+            days_since = (datetime.now() - last_earnings).days
+            result['status'] = 'REJECTED'
+            result['reject_reason'] = (
+                f"Post-earnings IV crush risk ({days_since}d since report; IV Rank "
+                f"unconfirmed or <={self.config['post_earnings_min_iv_rank']})"
+            )
+            if verbose:
+                print(f"      [X] REJECTED: {result['reject_reason']}")
+            return result
+
+        if verbose:
             print(f"      Step 5: Getting options chain (PUTs, delta {self.config['delta_min']}-{self.config['delta_max']})...")
 
         # Get options chain with delta filter
@@ -503,8 +576,9 @@ class WheelScreener:
         """
         score = 0
         
-        # IV Rank contribution (0-30 points)
-        if result.get('iv_rank'):
+        # IV Rank contribution (0-30 points). Provisional (hv_proxy warm-up) readings are
+        # unreliable, so they contribute ZERO — they can't help a candidate rank.
+        if result.get('iv_method') != 'hv_proxy_provisional' and result.get('iv_rank'):
             if result['iv_rank'] >= 50:
                 score += 30
             elif result['iv_rank'] >= 40:

@@ -5,11 +5,11 @@ VIX Regime Monitor - CSV Logging Version
 Tracks VIX history and regime changes for trade journaling.
 Appends readings to monthly CSV files for historical analysis.
 
-Regimes:
-- LOW (<14): Stop trading - premium too low
-- NORMAL (14-18): Standard sizing (100%)
-- ELEVATED (18-25): Aggressive deployment (150% sizing)
-- HIGH (>25): Maximum opportunity - deploy all capital
+Regimes (v3.1 — must match trade_journal.classify_vix_regime, the source of truth):
+- STOP (<14): No new trades - premium too low risk-adjusted
+- CAUTIOUS (14-18): Reduced deployment - 50% normal size
+- NORMAL (18-25): Standard deployment - 100% size
+- AGGRESSIVE (>25): 150% size, max 4 positions
 
 Output:
 - Monthly CSV: reports/vix/vix_history_YYYY-MM.csv
@@ -42,12 +42,12 @@ REPORTS_DIR = Path(__file__).parent / 'reports' / 'vix'
 # VIX thresholds
 VIX_THRESHOLDS = [14, 18, 25]
 
-# Regime definitions
+# Regime definitions (v3.1 — must match trade_journal.classify_vix_regime)
 VIX_REGIMES = {
-    'LOW': {'min': 0, 'max': 14, 'action': 'Stop trading - premium too low'},
-    'NORMAL': {'min': 14, 'max': 18, 'action': 'Standard sizing (100%)'},
-    'ELEVATED': {'min': 18, 'max': 25, 'action': 'Aggressive deployment (150% sizing)'},
-    'HIGH': {'min': 25, 'max': 999, 'action': 'Maximum opportunity - deploy all capital'}
+    'STOP': {'min': 0, 'max': 14, 'action': 'No new trades - premium too low risk-adjusted'},
+    'CAUTIOUS': {'min': 14, 'max': 18, 'action': 'Reduced deployment - 50% normal size'},
+    'NORMAL': {'min': 18, 'max': 25, 'action': 'Standard deployment - 100% size'},
+    'AGGRESSIVE': {'min': 25, 'max': 999, 'action': '150% size, max 4 positions'}
 }
 
 # Logging configuration
@@ -154,16 +154,16 @@ def get_regime(vix: float) -> str:
         vix: Current VIX value
 
     Returns:
-        Regime name: LOW, NORMAL, ELEVATED, or HIGH
+        Regime name: STOP, CAUTIOUS, NORMAL, or AGGRESSIVE (v3.1)
     """
     if vix < 14:
-        return 'LOW'
+        return 'STOP'
     elif vix < 18:
+        return 'CAUTIOUS'
+    elif vix <= 25:
         return 'NORMAL'
-    elif vix < 25:
-        return 'ELEVATED'
     else:
-        return 'HIGH'
+        return 'AGGRESSIVE'
 
 
 def detect_crossing(old_vix: Optional[float], new_vix: float) -> Tuple[bool, Optional[int], Optional[str]]:

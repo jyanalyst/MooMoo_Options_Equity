@@ -53,7 +53,7 @@ def run_wheel_scan(fetcher, max_capital: int = 8900, export_csv: bool = True, ve
     """
     # Default to config value if not explicitly specified
     if allow_unverified is None:
-        allow_unverified = WHEEL_CONFIG.get("allow_unverified_earnings", True)
+        allow_unverified = WHEEL_CONFIG.get("allow_unverified_earnings", False)
 
     print(f"\n{'='*60}")
     print(f">>> WHEEL STRATEGY SCAN")

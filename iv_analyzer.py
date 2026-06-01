@@ -264,6 +264,9 @@ class IVAnalyzer:
             return 50.0  # Default to middle if no range
 
         iv_rank = ((current_iv - iv_low) / (iv_high - iv_low)) * 100
+        # IV Rank is bounded [0, 100] by definition. The HV proxy can place current IV
+        # outside its historical range, so clamp — never emit impossible values (e.g. 195).
+        iv_rank = max(0.0, min(100.0, iv_rank))
 
         return round(iv_rank, 1)
 
@@ -419,8 +422,12 @@ class IVAnalyzer:
                 )
                 result["iv_method"] = "iv_percentile"
             else:
-                # Provisional: HV-proxy stand-in, NOT a true IV percentile.
-                result["iv_rank"] = self.calculate_iv_rank(ticker, current_iv_decimal)
+                # Not enough IV history yet. The realized-vol (HV) proxy actively MISLEADS
+                # on post-earnings names: realized vol stays high after an earnings move
+                # while implied vol has crushed, so the proxy reports a high "rank" on a
+                # cheap-premium name. We therefore do NOT emit it as a rank - IV is simply
+                # UNKNOWN until warm-up completes. Downstream treats provisional as unusable.
+                result["iv_rank"] = None
                 result["iv_method"] = "hv_proxy_provisional"
 
         # Get HV for comparison
