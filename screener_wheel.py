@@ -224,13 +224,14 @@ class WheelScreener:
         # Get IV analysis
         iv_analysis = self.iv_analyzer.get_full_iv_analysis(ticker, expiration)
         result['iv_rank'] = iv_analysis.get('iv_rank')
+        result['iv_method'] = iv_analysis.get('iv_method')
         result['current_iv'] = iv_analysis.get('current_iv')
         result['term_structure'] = iv_analysis.get('term_structure')
         result['term_structure_recommendation'] = iv_analysis.get('term_structure_recommendation')
 
         if verbose:
             print(f"      -> Current IV: {result['current_iv']}%")
-            print(f"      -> IV Rank: {result['iv_rank']}%")
+            print(f"      -> IV Rank: {result['iv_rank']}% ({result.get('iv_method')})")
             print(f"      -> Term Structure: {result['term_structure']} ({result['term_structure_recommendation']})")
 
         # IV Rank is now a SOFT filter - low IV Rank reduces score but doesn't reject
@@ -285,7 +286,7 @@ class WheelScreener:
         all_options = []
 
         for i, (idx, opt) in enumerate(chain.iterrows()):
-            opt_analysis = self._analyze_option(opt, quote['price'])
+            opt_analysis = self._analyze_option(opt, quote['price'], dte)
 
             # Only include options with a valid bid (can't trade with $0 bid)
             if opt_analysis['bid'] > 0:
@@ -323,19 +324,22 @@ class WheelScreener:
             print(f"         Expiration: {expiration} ({dte} DTE)")
             print(f"         IV Rank: {result['iv_rank']}%")
             print(f"         Best Strike: ${result['best_option']['strike']} (Score: {result['best_option']['quality_score']:.0f})")
-            print(f"         Premium: ${result['best_option']['premium']:.2f} ({result['best_option']['return_pct']:.2f}%)")
+            print(f"         Premium: ${result['best_option']['premium']:.2f} "
+                  f"({result['best_option']['return_pct']:.2f}% raw, "
+                  f"{result['best_option'].get('annualized_return_pct', 0):.1f}%/yr)")
             if warnings:
                 print(f"         Warnings: {', '.join(warnings)}")
 
         return result
     
-    def _analyze_option(self, option: pd.Series, stock_price: float) -> Dict:
+    def _analyze_option(self, option: pd.Series, stock_price: float, dte: int) -> Dict:
         """
         Analyze a single option contract.
 
         Args:
             option: Option data from chain
             stock_price: Current stock price
+            dte: Days to expiration for this contract (used to annualize the yield)
 
         Returns:
             Option analysis dict
@@ -387,13 +391,21 @@ class WheelScreener:
         # Calculate return on capital
         premium = bid if bid > 0 else last_price  # Use bid if available, otherwise last_price
         cash_required = strike * 100
+        # Raw premium yield on strike (single-period, for display / cash-flow)
         return_pct = (premium / strike) * 100 if strike > 0 else 0
+        # Annualized yield is the cross-stock ranking metric: the same dollar premium
+        # is worth more on a shorter-dated contract. Simple linear scaling (x365/DTE)
+        # assumes the put is held to expiry; it is a yield comparator, not a compounded
+        # return, and ignores assignment (delta already scores assignment risk separately).
+        annualized_return_pct = return_pct * (365.0 / dte) if dte > 0 else 0
 
         # RANKING-BASED APPROACH: Score everything, don't reject
         # Calculate quality score for ALL options (higher = better)
 
-        # Premium score (0-40 points) - most important for wheel strategy
-        premium_score = min(return_pct * 10, 40)  # 4% return = max 40 points
+        # Premium score (0-40 points) - most important for wheel strategy.
+        # Scored on ANNUALIZED yield (~1 pt per 1% annualized, capped at 40 => 40%/yr)
+        # so a 30-DTE and a 45-DTE contract paying the same raw % are ranked correctly.
+        premium_score = min(annualized_return_pct, 40)
 
         # Liquidity score (0-20 points)
         liquidity_score = 0
@@ -461,6 +473,7 @@ class WheelScreener:
             'premium': premium,
             'cash_required': cash_required,
             'return_pct': round(return_pct, 2),
+            'annualized_return_pct': round(annualized_return_pct, 2),
             'volume': volume,
             'open_interest': oi,
             'iv': round(iv * 100, 1),
@@ -511,7 +524,9 @@ class WheelScreener:
         if result.get('best_option'):
             opt = result['best_option']
             # Return contribution
-            score += min(opt['return_pct'] * 5, 15)
+            # Use annualized yield on the same scale as premium_score (0.3 pt per
+            # annualized %, capped at 15 => 50%/yr) so both scoring layers agree.
+            score += min(opt.get('annualized_return_pct', opt['return_pct']) * 0.3, 15)
             # Spread contribution
             if opt['spread_pct'] < 5:
                 score += 15

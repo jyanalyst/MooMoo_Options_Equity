@@ -86,7 +86,7 @@ class OutputFormatter:
         print(f"{'='*60}")
         print(f"Current Price: ${c['price']:.2f}")
         print(f"Expiration:    {c['expiration']} ({c.get('dte', 0)} DTE)")
-        print(f"IV Rank:       {c.get('iv_rank', 'N/A')}%")
+        print(f"IV Rank:       {c.get('iv_rank', 'N/A')}% ({c.get('iv_method', 'N/A')})")
         print(f"Current IV:    {c.get('current_iv', 'N/A')}%")
         print(f"Term Structure: {c.get('term_structure', 'N/A')}")
         print(f"                {c.get('term_structure_recommendation', '')}")
@@ -98,7 +98,8 @@ class OutputFormatter:
         print(f"  Premium:      ${opt.get('premium', 0):.2f} (Bid ${opt.get('bid', 0):.2f} / Ask ${opt.get('ask', 0):.2f})")
         print(f"  Spread:       ${opt.get('spread', 0):.2f} ({opt.get('spread_pct', 0):.1f}%)")
         print(f"  Cash Required: ${opt.get('cash_required', 0):,.0f}")
-        print(f"  Return:       {opt.get('return_pct', 0):.2f}%")
+        print(f"  Return:       {opt.get('return_pct', 0):.2f}% "
+              f"({opt.get('annualized_return_pct', 0):.1f}%/yr)")
         print(f"  Volume:       {opt.get('volume', 0):,}")
         print(f"  Open Interest: {opt.get('open_interest', 0):,}")
         print()
@@ -129,9 +130,10 @@ class OutputFormatter:
 
         fieldnames = [
             'rank', 'ticker', 'price', 'expiration', 'dte',
-            'strike', 'delta', 'premium', 'return_pct', 'cash_required',
+            'strike', 'delta', 'premium', 'return_pct', 'annualized_return_pct',
+            'cash_required',
             'bid', 'ask', 'spread', 'spread_pct', 'volume', 'open_interest',
-            'iv_rank', 'current_iv', 'term_structure',
+            'iv_rank', 'iv_method', 'current_iv', 'term_structure',
             'earnings_status', 'quality_score', 'option_code'
         ]
 
@@ -151,6 +153,7 @@ class OutputFormatter:
                     'delta': opt.get('delta', ''),
                     'premium': opt.get('premium', ''),
                     'return_pct': opt.get('return_pct', ''),
+                    'annualized_return_pct': opt.get('annualized_return_pct', ''),
                     'cash_required': opt.get('cash_required', ''),
                     'bid': opt.get('bid', ''),
                     'ask': opt.get('ask', ''),
@@ -159,6 +162,7 @@ class OutputFormatter:
                     'volume': opt.get('volume', ''),
                     'open_interest': opt.get('open_interest', ''),
                     'iv_rank': c.get('iv_rank', ''),
+                    'iv_method': c.get('iv_method', ''),
                     'current_iv': c.get('current_iv', ''),
                     'term_structure': c.get('term_structure', ''),
                     'earnings_status': c.get('earnings_status', ''),
@@ -207,6 +211,7 @@ if __name__ == "__main__":
             'expiration': '2025-02-21',
             'dte': 35,
             'iv_rank': 45.0,
+            'iv_method': 'iv_percentile',
             'current_iv': 38.5,
             'term_structure': 'CONTANGO',
             'term_structure_recommendation': 'FAVORABLE',
@@ -221,6 +226,7 @@ if __name__ == "__main__":
                 'spread': 0.03,
                 'spread_pct': 6.5,
                 'return_pct': 2.14,
+                'annualized_return_pct': round(2.14 * 365 / 35, 2),
                 'cash_required': 2100,
                 'volume': 2500,
                 'open_interest': 15000,

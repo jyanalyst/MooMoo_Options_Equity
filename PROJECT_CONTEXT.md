@@ -36,6 +36,29 @@ Fixed universe builder producing 18 stocks instead of 25-30:
 
 ## Completed Work
 
+### Quant-Correctness Fixes (2026-06-01)
+Fixed two statistically-flawed calculations that were silently misranking candidates
+(scope: math correctness only; efficiency/robustness deferred):
+
+1. **IV richness now uses a real IV Percentile** ([iv_analyzer.py](iv_analyzer.py))
+   - Old "IV Rank" compared *current implied* vol against the min/max of *20-day realized*
+     vol — an apples-to-oranges ratio biased toward 100 by the variance risk premium.
+   - Each scan now appends today's ATM implied vol per ticker to `iv_history.json`
+     (one obs/ticker/day, capped at 252) and computes IV Percentile against that
+     self-consistent series.
+   - Graceful warm-up: until `min_observations` (20) daily samples exist, falls back to
+     the realized-vol proxy labeled `iv_method = "hv_proxy_provisional"`; switches to
+     `iv_percentile` automatically once warmed up. New `iv_method` column in scan CSV.
+
+2. **Premium yield is now annualized** ([screener_wheel.py](screener_wheel.py))
+   - Ranking previously used raw `premium/strike`, so a 30-DTE and 45-DTE contract paying
+     the same % scored identically. Now scored on `× 365/DTE`. Raw `return_pct` retained
+     for display; new `annualized_return_pct` column drives the premium/quality scores.
+
+Tests: [tests/test_quant_fixes.py](tests/test_quant_fixes.py) — 28 passing
+(annualization scaling, IV percentile bounds/known-values, same-day overwrite, cap,
+invalid-IV guards, warm-up vs. warmed labeling; optional Hypothesis block).
+
 ### Core Infrastructure
 - **FMP Data Fetcher** ([fmp_data_fetcher.py](fmp_data_fetcher.py))
   - SEC-sourced fundamental data
@@ -75,6 +98,12 @@ Fixed universe builder producing 18 stocks instead of 25-30:
 - Cyclical limit of 3 prevents commodity overweight
 
 ## Key Architecture Decisions
+
+### IV Percentile over self-consistent IV history; annualized yield for ranking (2026-06-01)
+- IV richness measured as IV Percentile against a persisted daily ATM-IV series, not
+  against realized vol (which is a different quantity and biases the metric high).
+- Cross-stock candidate ranking uses annualized premium yield (`× 365/DTE`) so contracts
+  of different DTE are comparable. Raw yield kept only for display.
 
 ### Sector-Aware Scoring
 - Each metric ranked within sector using percentile

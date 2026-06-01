@@ -250,4 +250,10 @@ IV_RANK_CONFIG = {
     "lookback_days": 252,  # 1 year of trading days
     "cache_expiry_days": 7,  # Refresh IV history weekly
     "iv_cache_file": "./iv_cache.json",
+    # Real IV history: each scan appends today's ATM implied vol per ticker, so
+    # IV Percentile is computed against a self-consistent IV series (not realized vol).
+    "iv_history_file": "./iv_history.json",
+    # Minimum daily IV observations before the true IV Percentile is trusted. Below
+    # this the scanner falls back to a labeled HV proxy ("hv_proxy_provisional").
+    "min_observations": 20,
 }

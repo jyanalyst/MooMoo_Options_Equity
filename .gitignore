@@ -25,6 +25,7 @@ coverage.xml
 # Options Scanner
 universe.py.backup.*
 iv_cache.json
+iv_history.json
 earnings_cache.json
 scan_results/
 reports/
