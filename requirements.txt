@@ -3,6 +3,10 @@
 # MooMoo API (requires OpenD running locally)
 moomoo-api>=9.6.0
 
+# Interactive Brokers API (requires IB Gateway/TWS running locally)
+# Used by main_ibkr.py / ibkr_data_fetcher.py as an alternative options-data source
+ib_async>=2.0.0
+
 # Data manipulation
 pandas>=1.5.0
 numpy>=1.21.0

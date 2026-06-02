@@ -2,6 +2,7 @@
 Configuration settings for Options Scanner
 Strategy parameters derived from Wheel Strategy Guide
 """
+
 import platform
 import subprocess
 
@@ -25,28 +26,31 @@ def _get_wsl2_host_ip() -> str:
     """
     try:
         result = subprocess.run(
-            ['ip', 'route'], capture_output=True, text=True, timeout=5,
+            ["ip", "route"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         for line in result.stdout.splitlines():
-            if 'default' in line:
+            if "default" in line:
                 return line.split()[2]
     except Exception:
         pass
-    return '172.24.32.1'  # static fallback
+    return "172.24.32.1"  # static fallback
 
 
 def _get_moomoo_host() -> str:
     """Return the appropriate MooMoo host IP for the current environment."""
     # Inside WSL2 on Linux, resolve the Windows host gateway
-    if platform.system() == 'Linux':
+    if platform.system() == "Linux":
         try:
-            with open('/proc/version', 'r') as f:
-                if 'microsoft' in f.read().lower():
+            with open("/proc/version", "r") as f:
+                if "microsoft" in f.read().lower():
                     return _get_wsl2_host_ip()
         except FileNotFoundError:
             pass
     # Native Windows or other — OpenD is on localhost
-    return '127.0.0.1'
+    return "127.0.0.1"
 
 
 MOOMOO_HOST = _get_moomoo_host()
@@ -54,6 +58,26 @@ MOOMOO_PORT = 11111
 
 # Rate limiting (MooMoo recommends 3 seconds between option chain calls)
 API_DELAY_SECONDS = 3
+
+# =============================================================================
+# INTERACTIVE BROKERS (IBKR) API SETTINGS
+# =============================================================================
+# Alternative options-data source used by main_ibkr.py / ibkr_data_fetcher.py.
+# Requires IB Gateway (or TWS) running locally and an OPRA market-data
+# subscription for live option Greeks. Stock quotes still come from FMP and
+# historical prices from yfinance — only the options chain moves to IBKR.
+IBKR_HOST = "127.0.0.1"
+IBKR_PORT = 4002  # configured Gateway API socket (paper/live is set by the Gateway
+# login, NOT the port; IBKR defaults: Gateway 4001/4002, TWS 7496/7497).
+# This machine's Gateway serves LIVE account U13380098 on 4002.
+IBKR_CLIENT_ID = 11  # any unique integer per concurrent API client
+IBKR_MARKET_DATA_TYPE = (
+    3  # 1=live (needs OPRA), 2=frozen, 3=delayed (free), 4=delayed-frozen
+)
+# Strike band (fraction of spot) to request per expiration when building a PUT
+# chain — keeps simultaneous market-data lines well under IBKR's ~100 limit.
+IBKR_PUT_STRIKE_BAND = (0.70, 1.02)
+IBKR_MAX_STRIKES = 30  # cap strikes requested per chain (nearest to spot)
 
 # =============================================================================
 # WHEEL STRATEGY PARAMETERS
@@ -64,7 +88,6 @@ WHEEL_CONFIG = {
     "price_min": 15.0,
     "price_max": 200.0,
     "market_cap_min_billions": 10,  # Pre-filtered in universe.py
-    
     # Options filters
     "iv_rank_min": 30,  # RESTORED: Minimum IV Rank required
     "iv_rank_preferred": 50,
@@ -75,24 +98,19 @@ WHEEL_CONFIG = {
     "volume_min": 1,  # RELAXED: Minimum volume (OR logic with OI) - just needs SOME activity
     "open_interest_min": 10,  # RELAXED: Minimum open interest - wheel positions are held to expiration anyway
     "bid_ask_spread_max_pct": 0.50,  # TEMPORARILY RELAXED FOR DEBUGGING (50% of mid)
-    
     # Premium target
     "premium_pct_of_strike_min": 0.001,  # TEMPORARILY RELAXED FOR DEBUGGING (0.1% minimum)
-    
     # Earnings buffer
     "earnings_buffer_days": 7,
-
     # Post-earnings IV-crush guard: selling premium just after a report means selling
     # into an IV crush (cheap premium, negative EV). Per the strategy guide, a
     # post-earnings entry is valid ONLY if IV Rank is CONFIRMED elevated (> threshold).
-    "earnings_recency_days": 10,        # treat <=N days since last report as crush-risk
-    "post_earnings_min_iv_rank": 40,    # required confirmed IV Rank to allow such a name
-
+    "earnings_recency_days": 10,  # treat <=N days since last report as crush-risk
+    "post_earnings_min_iv_rank": 40,  # required confirmed IV Rank to allow such a name
     # Earnings validation (FAIL-CLOSED by default — never trade blind through earnings).
     # Unverified earnings (FMP returned no date) are REJECTED. Override per-run with
     # --allow-unverified if you will manually verify each name.
     "allow_unverified_earnings": False,
-
     # Term structure (contango = favorable)
     "term_structure_check": True,
 }
@@ -126,65 +144,59 @@ MANUAL_TICKERS = [
 
 HIGH_LIQUIDITY_TICKERS = [
     # === MEGA-CAP ETFs (Highest Liquidity) ===
-    'SPY',   # S&P 500 ETF - King of options liquidity
-    'QQQ',   # Nasdaq-100 ETF - Tech options powerhouse
-    'IWM',   # Russell 2000 ETF - Small cap exposure
-    'DIA',   # Dow Jones ETF
-    'EEM',   # Emerging Markets ETF
-    'GLD',   # Gold ETF
-    'TLT',   # 20-Year Treasury ETF
-    'XLF',   # Financials ETF
-    'XLE',   # Energy ETF
-
+    "SPY",  # S&P 500 ETF - King of options liquidity
+    "QQQ",  # Nasdaq-100 ETF - Tech options powerhouse
+    "IWM",  # Russell 2000 ETF - Small cap exposure
+    "DIA",  # Dow Jones ETF
+    "EEM",  # Emerging Markets ETF
+    "GLD",  # Gold ETF
+    "TLT",  # 20-Year Treasury ETF
+    "XLF",  # Financials ETF
+    "XLE",  # Energy ETF
     # === MEGA-CAP TECH (Active Options, Tight Spreads) ===
-    'AAPL',  # Apple - Most liquid single-stock options
-    'MSFT',  # Microsoft - Enterprise tech giant
-    'GOOGL', # Alphabet - Search/cloud leader
-    'AMZN',  # Amazon - E-commerce/AWS
-    'NVDA',  # Nvidia - AI/GPU leader
-    'META',  # Meta - Social media giant
-    'TSLA',  # Tesla - High IV, active options
-
+    "AAPL",  # Apple - Most liquid single-stock options
+    "MSFT",  # Microsoft - Enterprise tech giant
+    "GOOGL",  # Alphabet - Search/cloud leader
+    "AMZN",  # Amazon - E-commerce/AWS
+    "NVDA",  # Nvidia - AI/GPU leader
+    "META",  # Meta - Social media giant
+    "TSLA",  # Tesla - High IV, active options
     # === LARGE-CAP TECH (Good Liquidity) ===
-    'AMD',   # Advanced Micro Devices
-    'INTC',  # Intel
-    'NFLX',  # Netflix
-    'AVGO',  # Broadcom
-    'CRM',   # Salesforce
-    'ORCL',  # Oracle
-    'ADBE',  # Adobe
-
+    "AMD",  # Advanced Micro Devices
+    "INTC",  # Intel
+    "NFLX",  # Netflix
+    "AVGO",  # Broadcom
+    "CRM",  # Salesforce
+    "ORCL",  # Oracle
+    "ADBE",  # Adobe
     # === LARGE-CAP FINANCE ===
-    'JPM',   # JPMorgan Chase
-    'BAC',   # Bank of America
-    'WFC',   # Wells Fargo
-    'GS',    # Goldman Sachs
-    'MS',    # Morgan Stanley
-    'C',     # Citigroup
-    'V',     # Visa
-    'MA',    # Mastercard
-
+    "JPM",  # JPMorgan Chase
+    "BAC",  # Bank of America
+    "WFC",  # Wells Fargo
+    "GS",  # Goldman Sachs
+    "MS",  # Morgan Stanley
+    "C",  # Citigroup
+    "V",  # Visa
+    "MA",  # Mastercard
     # === LARGE-CAP HEALTHCARE ===
-    'UNH',   # UnitedHealth
-    'JNJ',   # Johnson & Johnson
-    'PFE',   # Pfizer
-    'ABBV',  # AbbVie
-    'MRK',   # Merck
-    'LLY',   # Eli Lilly
-
+    "UNH",  # UnitedHealth
+    "JNJ",  # Johnson & Johnson
+    "PFE",  # Pfizer
+    "ABBV",  # AbbVie
+    "MRK",  # Merck
+    "LLY",  # Eli Lilly
     # === LARGE-CAP CONSUMER ===
-    'WMT',   # Walmart
-    'HD',    # Home Depot
-    'MCD',   # McDonald's
-    'DIS',   # Disney
-    'NKE',   # Nike
-    'SBUX',  # Starbucks
-
+    "WMT",  # Walmart
+    "HD",  # Home Depot
+    "MCD",  # McDonald's
+    "DIS",  # Disney
+    "NKE",  # Nike
+    "SBUX",  # Starbucks
     # === HIGH-VOLATILITY NAMES (Wide spreads acceptable due to premium) ===
-    'COIN',  # Coinbase - Crypto exposure
-    'RIVN',  # Rivian - EV play
-    'PLTR',  # Palantir - AI/defense
-    'SOFI',  # SoFi - Fintech
+    "COIN",  # Coinbase - Crypto exposure
+    "RIVN",  # Rivian - EV play
+    "PLTR",  # Palantir - AI/defense
+    "SOFI",  # SoFi - Fintech
 ]
 
 # Rationale for Liquid-Only List:
@@ -246,26 +258,20 @@ OUTPUT_CONFIG = {
 
 POSITION_SECTOR_LIMITS = {
     # STRICT LIMITS (enforced at trade deployment)
-
     # Maximum sector exposure across all open positions
     # Example: With $47K capital, max $18.8K in Technology sector
     "max_sector_exposure_pct": 0.40,  # 40% of total capital max per sector
-
     # Maximum number of concurrent positions per sector
     # Example: Can have at most 3 Technology positions open simultaneously
-    "max_positions_per_sector": 3,    # 3 active positions max per sector
-
+    "max_positions_per_sector": 3,  # 3 active positions max per sector
     # Minimum sector diversity in active portfolio
     # Example: Must have positions in at least 3 different sectors
-    "min_active_sectors": 3,          # Must have positions in ≥3 different sectors
-
+    "min_active_sectors": 3,  # Must have positions in ≥3 different sectors
     # WARNING THRESHOLDS (trigger alerts but don't block trades)
-
     # Issue warning when approaching sector exposure limit
     "warn_sector_exposure_pct": 0.35,  # Warn at 35% sector exposure (before hitting 40% limit)
-
     # Issue warning when approaching position count limit
-    "warn_positions_per_sector": 2,    # Warn at 2 positions per sector (before hitting 3-position limit)
+    "warn_positions_per_sector": 2,  # Warn at 2 positions per sector (before hitting 3-position limit)
 }
 
 # Rationale for 40% max sector exposure:
