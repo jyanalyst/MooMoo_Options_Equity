@@ -43,7 +43,7 @@ import shutil
 import time
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List
 from pathlib import Path
 
 import pandas as pd
@@ -56,6 +56,7 @@ from fmp_data_fetcher import create_fetcher
 # =============================================================================
 # LOGGING CONFIGURATION
 # =============================================================================
+
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
     """
@@ -70,11 +71,11 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     log_dir = Path("./logs")
     log_dir.mkdir(exist_ok=True)
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = log_dir / f"universe_builder_{timestamp}.log"
 
     # Create logger
-    logger = logging.getLogger('universe_builder')
+    logger = logging.getLogger("universe_builder")
     logger.setLevel(logging.DEBUG if verbose else logging.INFO)
 
     # Remove existing handlers
@@ -84,15 +85,15 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter(
-        '%(asctime)s | %(levelname)-8s | %(funcName)s:%(lineno)d | %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        "%(asctime)s | %(levelname)-8s | %(funcName)s:%(lineno)d | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
     file_handler.setFormatter(file_formatter)
 
     # Console handler (INFO level unless verbose)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.DEBUG if verbose else logging.INFO)
-    console_formatter = logging.Formatter('%(message)s')
+    console_formatter = logging.Formatter("%(message)s")
     console_handler.setFormatter(console_formatter)
 
     logger.addHandler(file_handler)
@@ -113,12 +114,15 @@ logger = None
 
 # Tickers to track through the entire pipeline for debugging
 # Set to empty list to disable debug tracking
-DEBUG_TICKERS = ['A', 'ANET']
+DEBUG_TICKERS = ["A", "ANET"]
 
 # Storage for debug tracking results
 DEBUG_TRACKING = {}
 
-def log_debug_ticker(stage: str, ticker: str, status: str, reason: str = "", details: dict = None):
+
+def log_debug_ticker(
+    stage: str, ticker: str, status: str, reason: str = "", details: dict = None
+):
     """
     Log debug information for tracked tickers.
 
@@ -139,21 +143,29 @@ def log_debug_ticker(stage: str, ticker: str, status: str, reason: str = "", det
         DEBUG_TRACKING[ticker] = []
 
     entry = {
-        'timestamp': timestamp,
-        'stage': stage,
-        'status': status,
-        'reason': reason,
-        'details': details or {}
+        "timestamp": timestamp,
+        "stage": stage,
+        "status": status,
+        "reason": reason,
+        "details": details or {},
     }
     DEBUG_TRACKING[ticker].append(entry)
 
     # Print to console
-    status_icon = "✓" if status in ["FOUND", "PASSED", "INCLUDED"] else "✗" if status in ["REJECTED", "MISSING", "EXCLUDED"] else "→"
+    status_icon = (
+        "✓"
+        if status in ["FOUND", "PASSED", "INCLUDED"]
+        else "✗"
+        if status in ["REJECTED", "MISSING", "EXCLUDED"]
+        else "→"
+    )
     details_str = ""
     if details:
         details_str = " | " + ", ".join([f"{k}={v}" for k, v in details.items()])
 
-    print(f"[{timestamp}] DEBUG | {stage:35s} | {ticker:6s} | {status_icon} {status:10s} | {reason}{details_str}")
+    print(
+        f"[{timestamp}] DEBUG | {stage:35s} | {ticker:6s} | {status_icon} {status:10s} | {reason}{details_str}"
+    )
 
 
 def print_debug_summary():
@@ -161,17 +173,17 @@ def print_debug_summary():
     if not DEBUG_TICKERS:
         return
 
-    print("\n" + "="*100)
+    print("\n" + "=" * 100)
     print("DEBUG TRACKING SUMMARY: Finding Where A and ANET Were Excluded")
-    print("="*100)
+    print("=" * 100)
 
     for ticker in DEBUG_TICKERS:
-        print(f"\n{'─'*50}")
+        print(f"\n{'─' * 50}")
         print(f"TICKER: {ticker}")
-        print(f"{'─'*50}")
+        print(f"{'─' * 50}")
 
         if ticker not in DEBUG_TRACKING:
-            print(f"  ⚠ No tracking data recorded - ticker may not exist in FMP data")
+            print("  ⚠ No tracking data recorded - ticker may not exist in FMP data")
             continue
 
         entries = DEBUG_TRACKING[ticker]
@@ -179,16 +191,28 @@ def print_debug_summary():
         final_status = "UNKNOWN"
 
         for entry in entries:
-            status_icon = "✓" if entry['status'] in ["FOUND", "PASSED", "INCLUDED"] else "✗" if entry['status'] in ["REJECTED", "MISSING", "EXCLUDED"] else "→"
-            print(f"  [{entry['timestamp']}] {entry['stage']:35s} | {status_icon} {entry['status']}")
-            if entry['reason']:
-                print(f"                                                        └─ {entry['reason']}")
-            if entry['details']:
-                for k, v in entry['details'].items():
-                    print(f"                                                           {k}: {v}")
+            status_icon = (
+                "✓"
+                if entry["status"] in ["FOUND", "PASSED", "INCLUDED"]
+                else "✗"
+                if entry["status"] in ["REJECTED", "MISSING", "EXCLUDED"]
+                else "→"
+            )
+            print(
+                f"  [{entry['timestamp']}] {entry['stage']:35s} | {status_icon} {entry['status']}"
+            )
+            if entry["reason"]:
+                print(
+                    f"                                                        └─ {entry['reason']}"
+                )
+            if entry["details"]:
+                for k, v in entry["details"].items():
+                    print(
+                        f"                                                           {k}: {v}"
+                    )
 
-            last_seen_stage = entry['stage']
-            final_status = entry['status']
+            last_seen_stage = entry["stage"]
+            final_status = entry["status"]
 
         print(f"\n  FINAL STATUS: {final_status}")
         print(f"  LAST SEEN AT: {last_seen_stage}")
@@ -197,11 +221,11 @@ def print_debug_summary():
         if final_status in ["REJECTED", "EXCLUDED", "MISSING", "SKIPPED"]:
             # Find the rejection entry
             for entry in reversed(entries):
-                if entry['status'] in ["REJECTED", "EXCLUDED", "MISSING", "SKIPPED"]:
+                if entry["status"] in ["REJECTED", "EXCLUDED", "MISSING", "SKIPPED"]:
                     print(f"  ROOT CAUSE: {entry['reason']}")
                     break
 
-    print("\n" + "="*100)
+    print("\n" + "=" * 100)
 
 
 # =============================================================================
@@ -212,51 +236,50 @@ def print_debug_summary():
 # These replace the old FINVIZ_FILTERS with FMP-based filtering
 FMP_SCREENING_CRITERIA = {
     # FMP Screener filters (applied in fetch_stocks_from_fmp)
-    'Market Cap': '>$10B',                           # Tier 1 institutions only
-    'Price': '$15-600',                              # Options-friendly (expanded to include MSFT, GOOGL)
-    'Average Volume': '>1M shares/day',              # Ensures options liquidity
-    'Country': 'USA',                                # US-listed only (FMP default)
-
+    "Market Cap": ">$10B",  # Tier 1 institutions only
+    "Price": "$15-600",  # Options-friendly (expanded to include MSFT, GOOGL)
+    "Average Volume": ">1M shares/day",  # Ensures options liquidity
+    "Country": "USA",  # US-listed only (FMP default)
     # Post-screening filters (applied client-side after FMP fetch)
-    'P/E': '<50',                                    # Allow quality growth (relaxed from <35)
-    'Operating Margin': '>2%',                       # Profitable operations (stricter than Finviz >0%)
-    'Debt/Equity': '<1.5',                           # Allow stable debt (relaxed from <1.0 for Consumer Defensive)
-    'Return on Equity': '>8%',                       # Capital efficiency (relaxed from >10% for utilities)
-    'Current Ratio': '>0.6',                         # Banks/staples operate at 0.6-1.0 (relaxed from >1.0)
-    'Gross Margin': '>15%',                          # Meaningful pricing power
-    'Free Cash Flow': 'Positive with >2% margin',    # Cash generation (NEW - not in Finviz)
+    "P/E": "<50",  # Allow quality growth (relaxed from <35)
+    "Operating Margin": ">2%",  # Profitable operations (stricter than Finviz >0%)
+    "Debt/Equity": "<1.5",  # Allow stable debt (relaxed from <1.0 for Consumer Defensive)
+    "Return on Equity": ">8%",  # Capital efficiency (relaxed from >10% for utilities)
+    "Current Ratio": ">0.6",  # Banks/staples operate at 0.6-1.0 (relaxed from >1.0)
+    "Gross Margin": ">15%",  # Meaningful pricing power
+    "Free Cash Flow": "Positive with >2% margin",  # Cash generation (NEW - not in Finviz)
 }
 
 # Required columns from Finviz (abbreviated names that finviz actually returns)
 REQUIRED_COLUMNS = {
-    'critical': ['Ticker', 'Company', 'Price', 'Oper M', 'ROE', 'Curr R', 'Debt/Eq'],
-    'scoring': ['Oper M', 'ROE', 'Curr R', 'Debt/Eq', 'Gross M', 'Avg Volume'],
-    'metadata': ['Sector', 'Industry', 'Market Cap']
+    "critical": ["Ticker", "Company", "Price", "Oper M", "ROE", "Curr R", "Debt/Eq"],
+    "scoring": ["Oper M", "ROE", "Curr R", "Debt/Eq", "Gross M", "Avg Volume"],
+    "metadata": ["Sector", "Industry", "Market Cap"],
 }
 
 # Data quality thresholds (conservative validation)
 DATA_QUALITY_THRESHOLDS = {
-    'max_missing_pct': 0.10,        # Reject if >10% of critical metrics missing
-    'outlier_iqr_multiplier': 3.0,  # Flag values beyond Q3 + 3×IQR
-    'min_earnings_success_rate': 0.70,  # Require 70% earnings date success (increased from 50%)
+    "max_missing_pct": 0.10,  # Reject if >10% of critical metrics missing
+    "outlier_iqr_multiplier": 3.0,  # Flag values beyond Q3 + 3×IQR
+    "min_earnings_success_rate": 0.70,  # Require 70% earnings date success (increased from 50%)
 }
 
 # REMOVED: TIER_PRICE_RANGES - Single unified universe now (no price segmentation)
 
 QUALITY_WEIGHTS = {
     # Single-universe architecture: Emphasizes business durability
-    'debt_equity_inverse': 0.20,  # Balance sheet strength (highest weight)
-    'current_ratio': 0.15,        # Liquidity
-    'roe_consistency': 0.15,      # 5-year ROE stability (NEW)
-    'fcf_margin': 0.15,           # Cash generation
-    'revenue_growth_3yr': 0.10,   # Secular growth trend (NEW)
-    'gross_margin': 0.10,         # Pricing power
-    'operating_margin': 0.10,     # Profitability (reduced from 15%)
-    'volume_percentile': 0.05,    # Options liquidity (reduced from 15%)
+    "debt_equity_inverse": 0.20,  # Balance sheet strength (highest weight)
+    "current_ratio": 0.15,  # Liquidity
+    "roe_consistency": 0.15,  # 5-year ROE stability (NEW)
+    "fcf_margin": 0.15,  # Cash generation
+    "revenue_growth_3yr": 0.10,  # Secular growth trend (NEW)
+    "gross_margin": 0.10,  # Pricing power
+    "operating_margin": 0.10,  # Profitability (reduced from 15%)
+    "volume_percentile": 0.05,  # Options liquidity (reduced from 15%)
 }
 
 DEFAULT_LIMITS = {
-    'universe_size': 60,  # INCREASED: Option B Compromise - target 55-65 stocks (was 32)
+    "universe_size": 60,  # INCREASED: Option B Compromise - target 55-65 stocks (was 32)
 }
 
 # Minimum quality score for inclusion in universe
@@ -268,23 +291,20 @@ MIN_QUALITY_FLOOR = 48  # Don't include stocks scoring below this threshold
 
 ADVANCED_FILTER_THRESHOLDS = {
     # Financial Health (Hard Filters) - Relaxed for broader universe
-    'altman_z_min': 2.0,          # Gray zone edge, still safe (relaxed from 2.6)
-    'piotroski_min': 5,           # Passing score (relaxed from 6)
-
+    "altman_z_min": 2.0,  # Gray zone edge, still safe (relaxed from 2.6)
+    "piotroski_min": 5,  # Passing score (relaxed from 6)
     # Analyst Ratings (Hard Filter)
-    'analyst_buy_pct_min': 40.0,  # Allow mixed sentiment (relaxed from 50%)
-
+    "analyst_buy_pct_min": 40.0,  # Allow mixed sentiment (relaxed from 50%)
     # Institutional Ownership (Soft Filter - for scoring only)
-    'institutional_ownership_min': 20.0,   # Minimum for validation
-    'institutional_ownership_max': 90.0,   # Maximum to avoid crowded trades
+    "institutional_ownership_min": 20.0,  # Minimum for validation
+    "institutional_ownership_max": 90.0,  # Maximum to avoid crowded trades
 }
 
 ADVANCED_SCORING_WEIGHTS = {
     # Bonus points for advanced features (add to existing 100-point scale)
-    'financial_health_bonus': 5,      # Z > 3.0 AND Piotroski >= 7
-    'strong_analyst_buy_bonus': 3,    # Buy% > 70%
-    'elite_analyst_buy_bonus': 5,     # Buy% > 80%
-
+    "financial_health_bonus": 5,  # Z > 3.0 AND Piotroski >= 7
+    "strong_analyst_buy_bonus": 3,  # Buy% > 70%
+    "elite_analyst_buy_bonus": 5,  # Buy% > 80%
     # NOTE: Insider/institutional bonuses disabled - not available on FMP Starter plan
     # 'insider_buying_bonus': 5,        # Net insider buying in 6 months
     # 'institutional_increase_bonus': 5, # Institutional ownership increased
@@ -296,16 +316,24 @@ ADVANCED_SCORING_WEIGHTS = {
 # SECTOR DIVERSIFICATION (Prevent commodity concentration)
 # =============================================================================
 
-CYCLICAL_SECTORS = ['Basic Materials', 'Energy']  # Commodities - apply penalty
+CYCLICAL_SECTORS = ["Basic Materials", "Energy"]  # Commodities - apply penalty
 CYCLICAL_PENALTY = 0.80  # 20% score reduction for cyclical sectors
-CRYPTO_TICKERS = ['COIN', 'MARA', 'RIOT', 'CLSK', 'HUT', 'BITF', 'HOOD']  # Crypto-correlated, treat as cyclical
+CRYPTO_TICKERS = [
+    "COIN",
+    "MARA",
+    "RIOT",
+    "CLSK",
+    "HUT",
+    "BITF",
+    "HOOD",
+]  # Crypto-correlated, treat as cyclical
 
 # Chinese ADRs carry geopolitical risk (delisting, regulation, VIE structure)
-CHINA_ADRS = ['PDD', 'BABA', 'JD', 'NIO', 'XPEV', 'LI', 'BIDU', 'TME', 'TCOM', 'FUTU']
+CHINA_ADRS = ["PDD", "BABA", "JD", "NIO", "XPEV", "LI", "BIDU", "TME", "TCOM", "FUTU"]
 GEOPOLITICAL_PENALTY = 0.80  # 20% penalty for China ADRs
 
 # Consumer Cyclical stocks that are actually cyclical (exclude AMZN, COST - they have moats)
-CYCLICAL_CONSUMER = ['LULU', 'NKE', 'SBUX', 'MCD', 'HD', 'LOW', 'TJX', 'ROST']
+CYCLICAL_CONSUMER = ["LULU", "NKE", "SBUX", "MCD", "HD", "LOW", "TJX", "ROST"]
 
 # =============================================================================
 # BANK QUALITY SCORE EXEMPTION (Jan 2026)
@@ -316,15 +344,15 @@ CYCLICAL_CONSUMER = ['LULU', 'NKE', 'SBUX', 'MCD', 'HD', 'LOW', 'TJX', 'ROST']
 # 3. FCF margins: Negative/low (banks deploy capital differently than industrial companies)
 # 4. But: Excellent Wheel Strategy candidates (high volume, tight spreads, weekly options)
 TRADITIONAL_BANKS = [
-    'JPM',   # JPMorgan Chase
-    'WFC',   # Wells Fargo
-    'BAC',   # Bank of America
-    'USB',   # US Bancorp
-    'C',     # Citigroup
-    'PNC',   # PNC Financial
-    'TFC',   # Truist Financial
-    'COF',   # Capital One
-    'SCHW',  # Charles Schwab (brokerage, but similar characteristics)
+    "JPM",  # JPMorgan Chase
+    "WFC",  # Wells Fargo
+    "BAC",  # Bank of America
+    "USB",  # US Bancorp
+    "C",  # Citigroup
+    "PNC",  # PNC Financial
+    "TFC",  # Truist Financial
+    "COF",  # Capital One
+    "SCHW",  # Charles Schwab (brokerage, but similar characteristics)
 ]
 
 SECTOR_DIVERSITY_CONSTRAINTS = {
@@ -334,30 +362,26 @@ SECTOR_DIVERSITY_CONSTRAINTS = {
     # Allow sectors to reflect market reality (Technology has superior options
     # characteristics) while enforcing risk management at POSITION level.
     # =========================================================================
-
     # Soft caps - allow sectors to grow naturally within limits
-    'min_per_sector': 3,           # NEW: Minimum 3 stocks per sector (prevents underrepresentation)
-    'max_sector_pct': 0.35,        # NEW: No sector >35% of universe (soft cap)
-    'min_sectors': 6,              # INCREASED: Require 6+ sectors (was 5)
-    'max_cyclical_total': 6,       # UPDATED: Allow 3 Energy + 3 Basic Materials = 6
-
+    "min_per_sector": 3,  # NEW: Minimum 3 stocks per sector (prevents underrepresentation)
+    "max_sector_pct": 0.35,  # NEW: No sector >35% of universe (soft cap)
+    "min_sectors": 6,  # INCREASED: Require 6+ sectors (was 5)
+    "max_cyclical_total": 6,  # UPDATED: Allow 3 Energy + 3 Basic Materials = 6
     # Absolute safety limits
-    'max_sector_hard_cap': 20,     # NEW: No sector can have >20 stocks (prevents runaway)
-
+    "max_sector_hard_cap": 20,  # NEW: No sector can have >20 stocks (prevents runaway)
     # Legacy (kept for compatibility, but soft caps take precedence)
-    'max_per_sector': 20,          # RELAXED: Now uses max_sector_pct instead of hard count
-
-    'required_minimum': {          # Hard minimums - must be satisfied
-        'Consumer Defensive': 3,   # Ensure staples presence (KO, PG, WMT)
-        'Healthcare': 3,           # Ensure healthcare presence (JNJ, MRK, PFE)
-        'Financial Services': 3,   # Quality financials (V, SPGI, CME) - INCREASED from 2
+    "max_per_sector": 20,  # RELAXED: Now uses max_sector_pct instead of hard count
+    "required_minimum": {  # Hard minimums - must be satisfied
+        "Consumer Defensive": 3,  # Ensure staples presence (KO, PG, WMT)
+        "Healthcare": 3,  # Ensure healthcare presence (JNJ, MRK, PFE)
+        "Financial Services": 3,  # Quality financials (V, SPGI, CME) - INCREASED from 2
     },
-    'preferred_sectors': [         # Recession-resistant sectors to prioritize
-        'Healthcare',
-        'Consumer Defensive',
-        'Financial Services',
-        'Utilities',
-        'Industrials',
+    "preferred_sectors": [  # Recession-resistant sectors to prioritize
+        "Healthcare",
+        "Consumer Defensive",
+        "Financial Services",
+        "Utilities",
+        "Industrials",
     ],
 }
 
@@ -365,6 +389,7 @@ SECTOR_DIVERSITY_CONSTRAINTS = {
 # =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
+
 
 def print_banner():
     """Display ASCII art banner."""
@@ -379,38 +404,46 @@ def print_banner():
     print(banner)
 
 
-def print_summary(df: pd.DataFrame, universe: List[str],
-                 total_screened: int, total_passed: int):
+def print_summary(
+    df: pd.DataFrame, universe: List[str], total_screened: int, total_passed: int
+):
     """Print build summary."""
     print("""
 ================================================================
                     BUILD COMPLETE
 ================================================================
 """)
-    print(f"\nUniverse refresh complete!")
+    print("\nUniverse refresh complete!")
     print(f"Total quality stocks: {len(universe)}")
     next_refresh = datetime.now() + timedelta(days=14)
     print(f"Next scheduled refresh: {next_refresh.strftime('%Y-%m-%d')}")
     print("\nTo test the new universe:")
-    print("  python main.py wheel")
-    print("  python main.py wheel --max-capital 10000  # Filter to stocks under $100")
+    print("  python main_ibkr.py wheel    # IBKR options (live OPRA)")
+    print("  python main_moomoo.py wheel  # MooMoo options")
 
 
-def format_ticker_line(ticker: str, name: str, sector: str, score: float, earnings: str = None) -> str:
+def format_ticker_line(
+    ticker: str, name: str, sector: str, score: float, earnings: str = None
+) -> str:
     """Format a single ticker line with company info, score, and earnings date."""
     company_short = name[:30] if len(name) > 30 else name
 
     # Format earnings date if available
     earnings_str = ""
-    if earnings is not None and earnings != '' and str(earnings).lower() not in ['nan', 'none', '-']:
+    if (
+        earnings is not None
+        and earnings != ""
+        and str(earnings).lower() not in ["nan", "none", "-"]
+    ):
         try:
             earnings_clean = str(earnings).strip()
 
             # Handle YYYY-MM-DD format from yfinance
-            if len(earnings_clean) == 10 and earnings_clean.count('-') == 2:
+            if len(earnings_clean) == 10 and earnings_clean.count("-") == 2:
                 from datetime import datetime
-                dt = datetime.strptime(earnings_clean, '%Y-%m-%d')
-                earnings_display = dt.strftime('%b %d')  # Convert to "Feb 19"
+
+                dt = datetime.strptime(earnings_clean, "%Y-%m-%d")
+                earnings_display = dt.strftime("%b %d")  # Convert to "Feb 19"
             else:
                 # Handle other formats (legacy finviz format)
                 parts = earnings_clean.split()
@@ -421,7 +454,7 @@ def format_ticker_line(ticker: str, name: str, sector: str, score: float, earnin
 
             earnings_str = f" | Earnings: {earnings_display}"
 
-        except Exception as e:
+        except Exception:
             # Silently skip malformed dates
             pass
 
@@ -431,7 +464,7 @@ def format_ticker_line(ticker: str, name: str, sector: str, score: float, earnin
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description='Build fundamental quality stock universe for Wheel Strategy',
+        description="Build fundamental quality stock universe for Wheel Strategy",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -440,38 +473,34 @@ Examples:
   python universe_builder.py --output test.py   # Write to test file
   python universe_builder.py --verbose          # Show all tickers considered
   python universe_builder.py --universe-size 30 # Custom universe size
-        """
+        """,
     )
 
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Preview results without writing to file'
+        "--dry-run", action="store_true", help="Preview results without writing to file"
     )
 
     parser.add_argument(
-        '--output',
-        default='universe.py',
-        help='Output filename (default: universe.py)'
+        "--output", default="universe.py", help="Output filename (default: universe.py)"
     )
 
     parser.add_argument(
-        '--verbose',
-        action='store_true',
-        help='Show detailed progress and all tickers considered'
+        "--verbose",
+        action="store_true",
+        help="Show detailed progress and all tickers considered",
     )
 
     parser.add_argument(
-        '--universe-size',
+        "--universe-size",
         type=int,
-        default=DEFAULT_LIMITS['universe_size'],
-        help=f"Target universe size (default: {DEFAULT_LIMITS['universe_size']})"
+        default=DEFAULT_LIMITS["universe_size"],
+        help=f"Target universe size (default: {DEFAULT_LIMITS['universe_size']})",
     )
 
     parser.add_argument(
-        '--no-backup',
-        action='store_true',
-        help='Skip backup creation (not recommended)'
+        "--no-backup",
+        action="store_true",
+        help="Skip backup creation (not recommended)",
     )
 
     return parser.parse_args()
@@ -480,6 +509,7 @@ Examples:
 # =============================================================================
 # DATA FETCHING FUNCTIONS
 # =============================================================================
+
 
 def fetch_with_retry(screener, columns=None, max_retries: int = 3) -> pd.DataFrame:
     """
@@ -500,7 +530,7 @@ def fetch_with_retry(screener, columns=None, max_retries: int = 3) -> pd.DataFra
                 df = screener.screener_view(verbose=0)
             return df
         except Exception as e:
-            wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+            wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
             print(f"[WARN]  Attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
                 print(f"   Retrying in {wait_time}s...")
@@ -522,28 +552,28 @@ def test_blue_chip_availability(fetcher) -> tuple:
     Returns:
         Tuple of (available, filtered_out, missing) ticker lists
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("FMP API BLUE-CHIP AVAILABILITY TEST")
-    print("="*80)
+    print("=" * 80)
     print("Testing if FMP can return data for essential blue-chip stocks...")
     print("Method: Direct ticker lookup (bypassing screener)\n")
 
     CRITICAL_TICKERS = {
-        'KO': 'Coca-Cola',
-        'PG': 'Procter & Gamble',
-        'WMT': 'Walmart',
-        'JNJ': 'Johnson & Johnson',
-        'CVS': 'CVS Health',
-        'PFE': 'Pfizer',
-        'JPM': 'JPMorgan Chase',
-        'BAC': 'Bank of America',
-        'WFC': 'Wells Fargo',
-        'USB': 'US Bancorp',
-        'MSFT': 'Microsoft',
-        'AAPL': 'Apple',
-        'GOOGL': 'Alphabet',
-        'SO': 'Southern Company',
-        'DUK': 'Duke Energy',
+        "KO": "Coca-Cola",
+        "PG": "Procter & Gamble",
+        "WMT": "Walmart",
+        "JNJ": "Johnson & Johnson",
+        "CVS": "CVS Health",
+        "PFE": "Pfizer",
+        "JPM": "JPMorgan Chase",
+        "BAC": "Bank of America",
+        "WFC": "Wells Fargo",
+        "USB": "US Bancorp",
+        "MSFT": "Microsoft",
+        "AAPL": "Apple",
+        "GOOGL": "Alphabet",
+        "SO": "Southern Company",
+        "DUK": "Duke Energy",
     }
 
     available = []
@@ -561,8 +591,8 @@ def test_blue_chip_availability(fetcher) -> tuple:
                 continue
 
             # FMP has the data - extract key info from profile
-            price = profile.get('price', 0)
-            sector = profile.get('sector', 'Unknown')
+            price = profile.get("price", 0)
+            sector = profile.get("sector", "Unknown")
 
             # Fetch fundamental ratios (combined ratios + key metrics TTM)
             try:
@@ -570,67 +600,98 @@ def test_blue_chip_availability(fetcher) -> tuple:
 
                 if ratios:
                     # FMP uses TTM suffix for most metrics
-                    pe = ratios.get('peRatioTTM') or ratios.get('priceToEarningsRatioTTM')
-                    roe_raw = ratios.get('returnOnEquityTTM') or 0
-                    roe = roe_raw * 100 if roe_raw < 10 else roe_raw  # Handle both decimal and percentage
-                    debt_eq = ratios.get('debtEquityRatioTTM') or ratios.get('debtToEquityTTM') or 0
-                    curr_ratio = ratios.get('currentRatioTTM') or 0
-                    market_cap = ratios.get('marketCapTTM') or ratios.get('marketCap') or 0
+                    pe = ratios.get("peRatioTTM") or ratios.get(
+                        "priceToEarningsRatioTTM"
+                    )
+                    roe_raw = ratios.get("returnOnEquityTTM") or 0
+                    roe = (
+                        roe_raw * 100 if roe_raw < 10 else roe_raw
+                    )  # Handle both decimal and percentage
+                    debt_eq = (
+                        ratios.get("debtEquityRatioTTM")
+                        or ratios.get("debtToEquityTTM")
+                        or 0
+                    )
+                    curr_ratio = ratios.get("currentRatioTTM") or 0
+                    market_cap = (
+                        ratios.get("marketCapTTM") or ratios.get("marketCap") or 0
+                    )
 
                     # Check if it would pass screening filters
                     passes_filters = (
-                        market_cap > 10_000_000_000 and  # >$10B
-                        price >= 15 and price <= 300 and
-                        pe is not None and pe > 0 and pe < 50 and
-                        roe > 10 and
-                        debt_eq < 1.0 and
-                        curr_ratio > 1.0
+                        market_cap > 10_000_000_000  # >$10B
+                        and price >= 15
+                        and price <= 300
+                        and pe is not None
+                        and pe > 0
+                        and pe < 50
+                        and roe > 10
+                        and debt_eq < 1.0
+                        and curr_ratio > 1.0
                     )
 
                     if passes_filters:
                         available.append(ticker)
-                        print(f"  [OK] {ticker:6s} | {name:30s} | ${price:6.0f} | "
-                              f"PE: {pe:4.1f} | ROE: {roe:4.1f}% | D/E: {debt_eq:.2f} | "
-                              f"SHOULD PASS FILTERS")
+                        print(
+                            f"  [OK] {ticker:6s} | {name:30s} | ${price:6.0f} | "
+                            f"PE: {pe:4.1f} | ROE: {roe:4.1f}% | D/E: {debt_eq:.2f} | "
+                            f"SHOULD PASS FILTERS"
+                        )
                     else:
                         filtered_out.append(ticker)
                         pe_str = f"{pe:.1f}" if pe else "N/A"
-                        print(f"  [!!] {ticker:6s} | {name:30s} | ${price:6.0f} | "
-                              f"PE: {pe_str:>5} | ROE: {roe:4.1f}% | D/E: {debt_eq:.2f} | "
-                              f"FILTERED OUT")
+                        print(
+                            f"  [!!] {ticker:6s} | {name:30s} | ${price:6.0f} | "
+                            f"PE: {pe_str:>5} | ROE: {roe:4.1f}% | D/E: {debt_eq:.2f} | "
+                            f"FILTERED OUT"
+                        )
 
                         # Show why it was filtered
                         failures = []
-                        if market_cap <= 10_000_000_000: failures.append(f"MCap ${market_cap/1e9:.1f}B")
-                        if not (15 <= price <= 300): failures.append(f"Price ${price:.0f}")
-                        if not (pe and 0 < pe < 50): failures.append(f"P/E {pe}")
-                        if roe <= 10: failures.append(f"ROE {roe:.1f}%")
-                        if debt_eq >= 1.0: failures.append(f"D/E {debt_eq:.2f}")
-                        if curr_ratio <= 1.0: failures.append(f"CR {curr_ratio:.2f}")
+                        if market_cap <= 10_000_000_000:
+                            failures.append(f"MCap ${market_cap / 1e9:.1f}B")
+                        if not (15 <= price <= 300):
+                            failures.append(f"Price ${price:.0f}")
+                        if not (pe and 0 < pe < 50):
+                            failures.append(f"P/E {pe}")
+                        if roe <= 10:
+                            failures.append(f"ROE {roe:.1f}%")
+                        if debt_eq >= 1.0:
+                            failures.append(f"D/E {debt_eq:.2f}")
+                        if curr_ratio <= 1.0:
+                            failures.append(f"CR {curr_ratio:.2f}")
 
                         if failures:
                             print(f"         -> Failed: {', '.join(failures)}")
                 else:
                     missing.append(ticker)
-                    print(f"  [X] {ticker:6s} | {name:30s} | Profile exists but no ratios data")
+                    print(
+                        f"  [X] {ticker:6s} | {name:30s} | Profile exists but no ratios data"
+                    )
 
             except Exception as e:
                 missing.append(ticker)
-                print(f"  [X] {ticker:6s} | {name:30s} | Error fetching metrics: {str(e)[:50]}")
+                print(
+                    f"  [X] {ticker:6s} | {name:30s} | Error fetching metrics: {str(e)[:50]}"
+                )
 
         except Exception as e:
             missing.append(ticker)
             print(f"  [X] {ticker:6s} | {name:30s} | Error: {str(e)[:50]}")
 
     # Summary
-    print("\n" + "-"*80)
+    print("\n" + "-" * 80)
     print("SUMMARY:")
-    print("-"*80)
-    print(f"[OK] Available and passing filters: {len(available)}/{len(CRITICAL_TICKERS)}")
+    print("-" * 80)
+    print(
+        f"[OK] Available and passing filters: {len(available)}/{len(CRITICAL_TICKERS)}"
+    )
     if available:
         print(f"     Tickers: {', '.join(available)}")
 
-    print(f"[!!] Available but filtered out: {len(filtered_out)}/{len(CRITICAL_TICKERS)}")
+    print(
+        f"[!!] Available but filtered out: {len(filtered_out)}/{len(CRITICAL_TICKERS)}"
+    )
     if filtered_out:
         print(f"     Tickers: {', '.join(filtered_out)}")
 
@@ -638,23 +699,27 @@ def test_blue_chip_availability(fetcher) -> tuple:
     if missing:
         print(f"     Tickers: {', '.join(missing)}")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("DIAGNOSIS:")
-    print("="*80)
+    print("=" * 80)
 
     if len(available) >= 10:
         print("[OK] FMP HAS THE DATA - Stock screener is filtering them out")
-        print("     SOLUTION: Relax FMP screener filters, apply strict filters client-side")
+        print(
+            "     SOLUTION: Relax FMP screener filters, apply strict filters client-side"
+        )
         print("     OR: Fetch these tickers directly instead of using screener")
     elif len(available) + len(filtered_out) >= 10:
         print("[!!] FMP HAS THE DATA - But stocks fail quality filters")
-        print("     SOLUTION: Review filter criteria (P/E, ROE, Debt/Eq limits may be too strict)")
+        print(
+            "     SOLUTION: Review filter criteria (P/E, ROE, Debt/Eq limits may be too strict)"
+        )
     else:
         print("[X]  FMP API DOES NOT HAVE COMPLETE DATA")
         print("     SOLUTION: Manual universe override required")
         print("     FMP stock screener is not suitable for blue-chip stock selection")
 
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     return available, filtered_out, missing
 
@@ -687,37 +752,46 @@ def fetch_blue_chips_directly(fetcher, tickers_list: list) -> pd.DataFrame:
                 continue
 
             # Extract fields - profile is dict, ratios use TTM suffix
-            roe_raw = ratios.get('returnOnEquityTTM') or 0
+            roe_raw = ratios.get("returnOnEquityTTM") or 0
             roe = roe_raw * 100 if roe_raw < 10 else roe_raw
 
-            oper_m_raw = ratios.get('operatingProfitMarginTTM') or 0
+            oper_m_raw = ratios.get("operatingProfitMarginTTM") or 0
             oper_m = oper_m_raw * 100 if oper_m_raw < 1 else oper_m_raw
 
-            gross_m_raw = ratios.get('grossProfitMarginTTM') or 0
+            gross_m_raw = ratios.get("grossProfitMarginTTM") or 0
             gross_m = gross_m_raw * 100 if gross_m_raw < 1 else gross_m_raw
 
             stock_data = {
-                'Ticker': ticker,
-                'Company': profile.get('companyName', ''),
-                'Sector': profile.get('sector', ''),
-                'Industry': profile.get('industry', ''),
-                'Price': profile.get('price', 0),
-                'Market Cap': ratios.get('marketCapTTM') or ratios.get('marketCap') or 0,
-                'Avg Volume': profile.get('volAvg', 0),
-                'P/E': ratios.get('peRatioTTM') or ratios.get('priceToEarningsRatioTTM'),
-                'ROE': roe,
-                'Debt/Eq': ratios.get('debtEquityRatioTTM') or ratios.get('debtToEquityTTM') or 0,
-                'Curr R': ratios.get('currentRatioTTM') or 0,
-                'Oper M': oper_m,
-                'Gross M': gross_m,
+                "Ticker": ticker,
+                "Company": profile.get("companyName", ""),
+                "Sector": profile.get("sector", ""),
+                "Industry": profile.get("industry", ""),
+                "Price": profile.get("price", 0),
+                "Market Cap": ratios.get("marketCapTTM")
+                or ratios.get("marketCap")
+                or 0,
+                "Avg Volume": profile.get("volAvg", 0),
+                "P/E": ratios.get("peRatioTTM")
+                or ratios.get("priceToEarningsRatioTTM"),
+                "ROE": roe,
+                "Debt/Eq": ratios.get("debtEquityRatioTTM")
+                or ratios.get("debtToEquityTTM")
+                or 0,
+                "Curr R": ratios.get("currentRatioTTM") or 0,
+                "Oper M": oper_m,
+                "Gross M": gross_m,
             }
 
             # Only add if passes basic quality checks (relaxed for blue chips)
-            if (stock_data['Market Cap'] > 10_000_000_000 and
-                stock_data['Price'] >= 15 and
-                stock_data['ROE'] > 5):  # Relaxed ROE for staples
+            if (
+                stock_data["Market Cap"] > 10_000_000_000
+                and stock_data["Price"] >= 15
+                and stock_data["ROE"] > 5
+            ):  # Relaxed ROE for staples
                 all_stocks.append(stock_data)
-                print(f"  [OK] {ticker}: ${stock_data['Price']:.0f}, {stock_data['Sector']}")
+                print(
+                    f"  [OK] {ticker}: ${stock_data['Price']:.0f}, {stock_data['Sector']}"
+                )
             else:
                 print(f"  [SKIP] {ticker}: Failed basic checks (MCap/Price/ROE)")
 
@@ -747,11 +821,11 @@ def fetch_stocks_from_fmp() -> pd.DataFrame:
     # Fetch universe using FMP screener + fundamentals
     # This replaces Finviz with equivalent FMP filtering
     df = fetcher.fetch_universe_stocks(
-        market_cap_min=10e9,        # >$10B (Finviz: '+Large (over $10bln)')
-        price_min=15.0,              # >$15 (Finviz: 'Over $15')
-        price_max=600.0,             # <$600 (expanded to include MSFT, GOOGL)
-        volume_min=1_000_000,        # >1M (Finviz: 'Over 1M')
-        limit=500                    # Fetch up to 500 stocks
+        market_cap_min=10e9,  # >$10B (Finviz: '+Large (over $10bln)')
+        price_min=15.0,  # >$15 (Finviz: 'Over $15')
+        price_max=600.0,  # <$600 (expanded to include MSFT, GOOGL)
+        volume_min=1_000_000,  # >1M (Finviz: 'Over 1M')
+        limit=500,  # Fetch up to 500 stocks
     )
 
     if df.empty:
@@ -762,18 +836,27 @@ def fetch_stocks_from_fmp() -> pd.DataFrame:
 
     # DEBUG: Track target tickers through pipeline
     for ticker in DEBUG_TICKERS:
-        if ticker in df['Ticker'].values:
-            row = df[df['Ticker'] == ticker].iloc[0]
+        if ticker in df["Ticker"].values:
+            row = df[df["Ticker"] == ticker].iloc[0]
             details = {
-                'Price': f"${row.get('Price', 0):.2f}",
-                'Sector': row.get('Sector', 'N/A'),
-                'Market Cap': row.get('Market Cap', 'N/A'),
+                "Price": f"${row.get('Price', 0):.2f}",
+                "Sector": row.get("Sector", "N/A"),
+                "Market Cap": row.get("Market Cap", "N/A"),
             }
-            log_debug_ticker("Stage 1: FMP Fetch", ticker, "FOUND",
-                           f"Present in FMP S&P 500 list", details)
+            log_debug_ticker(
+                "Stage 1: FMP Fetch",
+                ticker,
+                "FOUND",
+                "Present in FMP S&P 500 list",
+                details,
+            )
         else:
-            log_debug_ticker("Stage 1: FMP Fetch", ticker, "MISSING",
-                           "NOT found in FMP S&P 500 constituent list")
+            log_debug_ticker(
+                "Stage 1: FMP Fetch",
+                ticker,
+                "MISSING",
+                "NOT found in FMP S&P 500 constituent list",
+            )
 
     # Debug: Show fetched columns
     print("\nFetched columns from FMP:")
@@ -781,14 +864,14 @@ def fetch_stocks_from_fmp() -> pd.DataFrame:
         print(f"  * {col}")
 
     # Diagnostic: Check for key defensive stocks
-    DEFENSIVE_TICKERS = ['KO', 'PG', 'WMT', 'JNJ', 'CVS', 'PFE', 'CL', 'COST']
+    DEFENSIVE_TICKERS = ["KO", "PG", "WMT", "JNJ", "CVS", "PFE", "CL", "COST"]
     print("\n[DIAGNOSTIC] Checking for defensive stocks in FMP response:")
     for ticker in DEFENSIVE_TICKERS:
-        if ticker in df['Ticker'].values:
-            row = df[df['Ticker'] == ticker].iloc[0]
-            pe = row.get('P/E', 'N/A')
-            de = row.get('Debt/Eq', 'N/A')
-            sector = row.get('Sector', 'N/A')
+        if ticker in df["Ticker"].values:
+            row = df[df["Ticker"] == ticker].iloc[0]
+            pe = row.get("P/E", "N/A")
+            de = row.get("Debt/Eq", "N/A")
+            sector = row.get("Sector", "N/A")
             print(f"  [OK] {ticker}: P/E={pe}, D/E={de}, Sector={sector}")
         else:
             print(f"  [X] {ticker} - NOT in FMP response")
@@ -796,47 +879,51 @@ def fetch_stocks_from_fmp() -> pd.DataFrame:
     # ═══════════════════════════════════════════════════════════════
     # CRITICAL DIAGNOSTIC: Blue-Chip Stock Verification
     # ═══════════════════════════════════════════════════════════════
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("DIAGNOSTIC: Blue-Chip Stock Check")
-    print("="*70)
+    print("=" * 70)
 
     EXPECTED_BLUE_CHIPS = {
-        'KO': 'Coca-Cola',
-        'PG': 'Procter & Gamble',
-        'WMT': 'Walmart',
-        'JNJ': 'Johnson & Johnson',
-        'CVS': 'CVS Health',
-        'PFE': 'Pfizer',
-        'JPM': 'JPMorgan Chase',
-        'BAC': 'Bank of America',
-        'WFC': 'Wells Fargo',
-        'USB': 'US Bancorp',
-        'MSFT': 'Microsoft',
-        'SO': 'Southern Company',
-        'DUK': 'Duke Energy',
+        "KO": "Coca-Cola",
+        "PG": "Procter & Gamble",
+        "WMT": "Walmart",
+        "JNJ": "Johnson & Johnson",
+        "CVS": "CVS Health",
+        "PFE": "Pfizer",
+        "JPM": "JPMorgan Chase",
+        "BAC": "Bank of America",
+        "WFC": "Wells Fargo",
+        "USB": "US Bancorp",
+        "MSFT": "Microsoft",
+        "SO": "Southern Company",
+        "DUK": "Duke Energy",
     }
 
     found = []
     missing = []
 
     for ticker, name in EXPECTED_BLUE_CHIPS.items():
-        if ticker in df['Ticker'].values:
-            row = df[df['Ticker'] == ticker].iloc[0]
+        if ticker in df["Ticker"].values:
+            row = df[df["Ticker"] == ticker].iloc[0]
             found.append(ticker)
-            print(f"  [OK] {ticker:6s} | {name:25s} | Price: ${row.get('Price', 0):.0f} | "
-                  f"Sector: {row.get('Sector', 'N/A')}")
+            print(
+                f"  [OK] {ticker:6s} | {name:25s} | Price: ${row.get('Price', 0):.0f} | "
+                f"Sector: {row.get('Sector', 'N/A')}"
+            )
         else:
             missing.append(ticker)
             print(f"  [X]  {ticker:6s} | {name:25s} | MISSING")
 
     print(f"\nFound: {len(found)}/{len(EXPECTED_BLUE_CHIPS)}")
     print(f"Missing: {', '.join(missing) if missing else 'None'}")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     return df
 
 
-def fetch_advanced_data_for_top_stocks(df: pd.DataFrame, top_n: int = 50) -> pd.DataFrame:
+def fetch_advanced_data_for_top_stocks(
+    df: pd.DataFrame, top_n: int = 50
+) -> pd.DataFrame:
     """
     Fetch advanced FMP data for top N stocks (by preliminary quality score).
 
@@ -860,44 +947,64 @@ def fetch_advanced_data_for_top_stocks(df: pd.DataFrame, top_n: int = 50) -> pd.
     Returns:
         DataFrame with advanced data columns added
     """
-    print(f"\n[Step 2.5/7] Fetching advanced data for top {top_n} stocks + required sectors...")
-    print(f"  (Financial scores, analyst estimates, analyst ratings)")
-    print(f"  NOTE: Insider/institutional data skipped (requires higher FMP tier)")
+    print(
+        f"\n[Step 2.5/7] Fetching advanced data for top {top_n} stocks + required sectors..."
+    )
+    print("  (Financial scores, analyst estimates, analyst ratings)")
+    print("  NOTE: Insider/institutional data skipped (requires higher FMP tier)")
 
     # Get top N stocks by preliminary Quality_Score
-    if 'Quality_Score' not in df.columns:
+    if "Quality_Score" not in df.columns:
         print("  WARNING: Quality_Score not found, using all stocks up to limit")
         top_stocks = df.head(top_n)
     else:
-        top_stocks = df.nlargest(top_n, 'Quality_Score')
+        top_stocks = df.nlargest(top_n, "Quality_Score")
 
-    tickers_to_fetch = set(top_stocks['Ticker'].tolist())
+    tickers_to_fetch = set(top_stocks["Ticker"].tolist())
 
     # DEBUG: Check if debug tickers are in top N
     for ticker in DEBUG_TICKERS:
-        if ticker in df['Ticker'].values:
+        if ticker in df["Ticker"].values:
             # Get rank by Quality_Score
-            df_sorted = df.sort_values('Quality_Score', ascending=False).reset_index(drop=True)
-            rank = df_sorted[df_sorted['Ticker'] == ticker].index[0] + 1
-            score = df[df['Ticker'] == ticker]['Quality_Score'].iloc[0]
-            sector = df[df['Ticker'] == ticker]['Sector'].iloc[0]
+            df_sorted = df.sort_values("Quality_Score", ascending=False).reset_index(
+                drop=True
+            )
+            rank = df_sorted[df_sorted["Ticker"] == ticker].index[0] + 1
+            score = df[df["Ticker"] == ticker]["Quality_Score"].iloc[0]
+            sector = df[df["Ticker"] == ticker]["Sector"].iloc[0]
 
             if ticker in tickers_to_fetch:
-                log_debug_ticker("Stage 3: Advanced Data Fetch", ticker, "SELECTED",
-                               f"In top {top_n} by Quality_Score (Rank #{rank})",
-                               {'Score': f"{score:.1f}", 'Sector': sector})
+                log_debug_ticker(
+                    "Stage 3: Advanced Data Fetch",
+                    ticker,
+                    "SELECTED",
+                    f"In top {top_n} by Quality_Score (Rank #{rank})",
+                    {"Score": f"{score:.1f}", "Sector": sector},
+                )
             else:
-                log_debug_ticker("Stage 3: Advanced Data Fetch", ticker, "SKIPPED",
-                               f"NOT in top {top_n} - Ranked #{rank} of {len(df)} (needs top {top_n})",
-                               {'Score': f"{score:.1f}", 'Sector': sector})
+                log_debug_ticker(
+                    "Stage 3: Advanced Data Fetch",
+                    ticker,
+                    "SKIPPED",
+                    f"NOT in top {top_n} - Ranked #{rank} of {len(df)} (needs top {top_n})",
+                    {"Score": f"{score:.1f}", "Sector": sector},
+                )
         else:
-            log_debug_ticker("Stage 3: Advanced Data Fetch", ticker, "MISSING",
-                           "Not in dataset at this stage")
+            log_debug_ticker(
+                "Stage 3: Advanced Data Fetch",
+                ticker,
+                "MISSING",
+                "Not in dataset at this stage",
+            )
 
     # Also include top stocks from required sectors to ensure diversity
-    required_sectors = SECTOR_DIVERSITY_CONSTRAINTS.get('required_minimum', {})
+    required_sectors = SECTOR_DIVERSITY_CONSTRAINTS.get("required_minimum", {})
     for sector, min_count in required_sectors.items():
-        sector_stocks = df[df['Sector'] == sector].nlargest(min_count * 2, 'Quality_Score')['Ticker'].tolist()
+        sector_stocks = (
+            df[df["Sector"] == sector]
+            .nlargest(min_count * 2, "Quality_Score")["Ticker"]
+            .tolist()
+        )
         added = [t for t in sector_stocks if t not in tickers_to_fetch]
         if added:
             print(f"  Including {len(added)} extra {sector} stocks: {added}")
@@ -906,9 +1013,9 @@ def fetch_advanced_data_for_top_stocks(df: pd.DataFrame, top_n: int = 50) -> pd.
     # CRITICAL: Always include essential blue-chip tickers regardless of preliminary score
     # Banks score low on margins (regulated, not growth) but are essential for defensive allocation
     # Note: BAC removed (scores 25.4, legitimately fails quality threshold of 30)
-    CRITICAL_BLUE_CHIPS = ['JPM', 'WFC', 'USB', 'PFE', 'WMT', 'AAPL', 'SO', 'DUK']
-    critical_in_dataset = [t for t in CRITICAL_BLUE_CHIPS if t in df['Ticker'].values]
-    critical_missing = [t for t in CRITICAL_BLUE_CHIPS if t not in df['Ticker'].values]
+    CRITICAL_BLUE_CHIPS = ["JPM", "WFC", "USB", "PFE", "WMT", "AAPL", "SO", "DUK"]
+    critical_in_dataset = [t for t in CRITICAL_BLUE_CHIPS if t in df["Ticker"].values]
+    critical_missing = [t for t in CRITICAL_BLUE_CHIPS if t not in df["Ticker"].values]
     critical_added = [t for t in critical_in_dataset if t not in tickers_to_fetch]
     critical_already = [t for t in critical_in_dataset if t in tickers_to_fetch]
 
@@ -917,7 +1024,9 @@ def fetch_advanced_data_for_top_stocks(df: pd.DataFrame, top_n: int = 50) -> pd.
     print(f"  [DEBUG] Critical blue-chips missing from dataset: {critical_missing}")
 
     if critical_added:
-        print(f"  Including {len(critical_added)} critical blue-chips: {critical_added}")
+        print(
+            f"  Including {len(critical_added)} critical blue-chips: {critical_added}"
+        )
         tickers_to_fetch.update(critical_added)
 
     tickers_to_fetch = list(tickers_to_fetch)
@@ -946,9 +1055,14 @@ def fetch_advanced_data_for_top_stocks(df: pd.DataFrame, top_n: int = 50) -> pd.
 
     # Initialize new columns with defaults
     advanced_columns = [
-        'Altman_Z', 'Piotroski', 'Analyst_Buy_Pct', 'Analyst_Consensus',
-        'Insider_Net_Buying', 'Insider_Buy_Ratio',
-        'Institutional_Pct', 'Institutional_Change'
+        "Altman_Z",
+        "Piotroski",
+        "Analyst_Buy_Pct",
+        "Analyst_Consensus",
+        "Insider_Net_Buying",
+        "Insider_Buy_Ratio",
+        "Institutional_Pct",
+        "Institutional_Change",
     ]
 
     for col in advanced_columns:
@@ -956,32 +1070,46 @@ def fetch_advanced_data_for_top_stocks(df: pd.DataFrame, top_n: int = 50) -> pd.
 
     # Populate advanced data
     for ticker, data in advanced_data.items():
-        mask = df['Ticker'] == ticker
-        df.loc[mask, 'Altman_Z'] = data.get('altman_z_score')
-        df.loc[mask, 'Piotroski'] = data.get('piotroski_score')
-        df.loc[mask, 'Analyst_Buy_Pct'] = data.get('analyst_buy_pct')
-        df.loc[mask, 'Analyst_Consensus'] = data.get('analyst_consensus')
-        df.loc[mask, 'Insider_Net_Buying'] = data.get('insider_net_buying')
-        df.loc[mask, 'Insider_Buy_Ratio'] = data.get('insider_buy_ratio')
-        df.loc[mask, 'Institutional_Pct'] = data.get('institutional_ownership_pct')
-        df.loc[mask, 'Institutional_Change'] = data.get('institutional_change')
+        mask = df["Ticker"] == ticker
+        df.loc[mask, "Altman_Z"] = data.get("altman_z_score")
+        df.loc[mask, "Piotroski"] = data.get("piotroski_score")
+        df.loc[mask, "Analyst_Buy_Pct"] = data.get("analyst_buy_pct")
+        df.loc[mask, "Analyst_Consensus"] = data.get("analyst_consensus")
+        df.loc[mask, "Insider_Net_Buying"] = data.get("insider_net_buying")
+        df.loc[mask, "Insider_Buy_Ratio"] = data.get("insider_buy_ratio")
+        df.loc[mask, "Institutional_Pct"] = data.get("institutional_ownership_pct")
+        df.loc[mask, "Institutional_Change"] = data.get("institutional_change")
 
     # DEBUG: Report advanced data status for debug tickers
     for ticker in DEBUG_TICKERS:
-        if ticker in df['Ticker'].values:
-            row = df[df['Ticker'] == ticker].iloc[0]
-            has_data = pd.notna(row.get('Altman_Z'))
+        if ticker in df["Ticker"].values:
+            row = df[df["Ticker"] == ticker].iloc[0]
+            has_data = pd.notna(row.get("Altman_Z"))
             if has_data:
-                log_debug_ticker("Stage 3: Advanced Data Result", ticker, "FETCHED",
-                               f"Advanced data retrieved",
-                               {
-                                   'Altman_Z': f"{row.get('Altman_Z', 0):.2f}" if pd.notna(row.get('Altman_Z')) else 'N/A',
-                                   'Piotroski': f"{row.get('Piotroski', 0):.0f}" if pd.notna(row.get('Piotroski')) else 'N/A',
-                                   'Buy%': f"{row.get('Analyst_Buy_Pct', 0):.1f}%" if pd.notna(row.get('Analyst_Buy_Pct')) else 'N/A',
-                               })
+                log_debug_ticker(
+                    "Stage 3: Advanced Data Result",
+                    ticker,
+                    "FETCHED",
+                    "Advanced data retrieved",
+                    {
+                        "Altman_Z": f"{row.get('Altman_Z', 0):.2f}"
+                        if pd.notna(row.get("Altman_Z"))
+                        else "N/A",
+                        "Piotroski": f"{row.get('Piotroski', 0):.0f}"
+                        if pd.notna(row.get("Piotroski"))
+                        else "N/A",
+                        "Buy%": f"{row.get('Analyst_Buy_Pct', 0):.1f}%"
+                        if pd.notna(row.get("Analyst_Buy_Pct"))
+                        else "N/A",
+                    },
+                )
             else:
-                log_debug_ticker("Stage 3: Advanced Data Result", ticker, "NO_DATA",
-                               "No advanced data (not in fetch list or API failure)")
+                log_debug_ticker(
+                    "Stage 3: Advanced Data Result",
+                    ticker,
+                    "NO_DATA",
+                    "No advanced data (not in fetch list or API failure)",
+                )
 
     return df
 
@@ -989,6 +1117,7 @@ def fetch_advanced_data_for_top_stocks(df: pd.DataFrame, top_n: int = 50) -> pd.
 # =============================================================================
 # DATA VALIDATION FUNCTIONS
 # =============================================================================
+
 
 def validate_schema(df: pd.DataFrame) -> None:
     """
@@ -1010,7 +1139,7 @@ def validate_schema(df: pd.DataFrame) -> None:
     missing_cols = [col for col in all_required if col not in df.columns]
 
     if missing_cols:
-        print(f"[ERROR] CRITICAL: Required columns missing from finviz data!")
+        print("[ERROR] CRITICAL: Required columns missing from finviz data!")
         print(f"   Missing columns: {missing_cols}")
         print(f"   Available columns: {df.columns.tolist()}")
         raise KeyError(
@@ -1023,7 +1152,8 @@ def validate_schema(df: pd.DataFrame) -> None:
 
     # Schema version tracking (hash of column names for debugging)
     import hashlib
-    schema_hash = hashlib.md5(','.join(sorted(df.columns)).encode()).hexdigest()[:8]
+
+    schema_hash = hashlib.md5(",".join(sorted(df.columns)).encode()).hexdigest()[:8]
     print(f"  Schema version: {schema_hash}")
 
 
@@ -1040,7 +1170,7 @@ def validate_data_completeness(df: pd.DataFrame) -> None:
     """
     print("\n[VALIDATION] Data completeness check...")
 
-    critical_metrics = REQUIRED_COLUMNS['scoring']
+    critical_metrics = REQUIRED_COLUMNS["scoring"]
     issues = []
 
     for col in critical_metrics:
@@ -1048,22 +1178,30 @@ def validate_data_completeness(df: pd.DataFrame) -> None:
             null_count = df[col].isna().sum()
             null_pct = null_count / len(df)
 
-            if null_pct > DATA_QUALITY_THRESHOLDS['max_missing_pct']:
-                issues.append(f"  [ERROR] {col}: {null_pct:.1%} missing ({null_count}/{len(df)} rows)")
+            if null_pct > DATA_QUALITY_THRESHOLDS["max_missing_pct"]:
+                issues.append(
+                    f"  [ERROR] {col}: {null_pct:.1%} missing ({null_count}/{len(df)} rows)"
+                )
             else:
-                print(f"  [OK] {col}: {null_pct:.1%} missing ({null_count}/{len(df)} rows)")
+                print(
+                    f"  [OK] {col}: {null_pct:.1%} missing ({null_count}/{len(df)} rows)"
+                )
 
     if issues:
-        print(f"\n[ERROR] CRITICAL: Data completeness below threshold!")
+        print("\n[ERROR] CRITICAL: Data completeness below threshold!")
         print("\n".join(issues))
-        print(f"\nThreshold: {DATA_QUALITY_THRESHOLDS['max_missing_pct']:.0%} maximum missing allowed")
+        print(
+            f"\nThreshold: {DATA_QUALITY_THRESHOLDS['max_missing_pct']:.0%} maximum missing allowed"
+        )
         raise ValueError(
             f"Data quality check failed: {len(issues)} metrics have >10% missing data. "
             f"This may indicate finviz data quality issues or connectivity problems. "
             f"Check finviz.com directly or try again later."
         )
 
-    print(f"  [OK] All metrics meet {DATA_QUALITY_THRESHOLDS['max_missing_pct']:.0%} completeness threshold")
+    print(
+        f"  [OK] All metrics meet {DATA_QUALITY_THRESHOLDS['max_missing_pct']:.0%} completeness threshold"
+    )
 
 
 def detect_and_remove_outliers(df: pd.DataFrame) -> pd.DataFrame:
@@ -1086,10 +1224,10 @@ def detect_and_remove_outliers(df: pd.DataFrame) -> pd.DataFrame:
     print("\n[VALIDATION] Outlier detection (3×IQR method)...")
 
     df = df.copy()
-    numeric_metrics = ['P/E', 'Oper M', 'ROE', 'Curr R', 'Debt/Eq', 'Gross M']
+    numeric_metrics = ["P/E", "Oper M", "ROE", "Curr R", "Debt/Eq", "Gross M"]
 
     # Metrics where Financial Services should be exempt (different capital structure)
-    financial_exempt_metrics = ['Curr R', 'Debt/Eq']
+    financial_exempt_metrics = ["Curr R", "Debt/Eq"]
 
     outliers_found = []
     total_outliers = 0
@@ -1099,9 +1237,9 @@ def detect_and_remove_outliers(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         # For certain metrics, exclude Financial Services from outlier detection
-        if col in financial_exempt_metrics and 'Sector' in df.columns:
+        if col in financial_exempt_metrics and "Sector" in df.columns:
             # Only apply outlier detection to non-Financial Services
-            analysis_mask = df['Sector'] != 'Financial Services'
+            analysis_mask = df["Sector"] != "Financial Services"
             analysis_df = df[analysis_mask]
         else:
             analysis_mask = pd.Series(True, index=df.index)
@@ -1115,39 +1253,49 @@ def detect_and_remove_outliers(df: pd.DataFrame) -> pd.DataFrame:
         Q3 = analysis_df[col].quantile(0.75)
         IQR = Q3 - Q1
 
-        multiplier = DATA_QUALITY_THRESHOLDS['outlier_iqr_multiplier']
+        multiplier = DATA_QUALITY_THRESHOLDS["outlier_iqr_multiplier"]
         lower_bound = Q1 - multiplier * IQR
         upper_bound = Q3 + multiplier * IQR
 
         # Identify outliers (only in the analyzed subset)
-        outlier_mask = analysis_mask & ((df[col] < lower_bound) | (df[col] > upper_bound))
+        outlier_mask = analysis_mask & (
+            (df[col] < lower_bound) | (df[col] > upper_bound)
+        )
         outlier_count = outlier_mask.sum()
 
         if outlier_count > 0:
-            outlier_tickers = df[outlier_mask]['Ticker'].tolist()
+            outlier_tickers = df[outlier_mask]["Ticker"].tolist()
             outlier_values = df[outlier_mask][col].tolist()
-            outliers_found.append({
-                'metric': col,
-                'count': outlier_count,
-                'tickers': outlier_tickers,
-                'values': outlier_values,
-                'bounds': (lower_bound, upper_bound)
-            })
+            outliers_found.append(
+                {
+                    "metric": col,
+                    "count": outlier_count,
+                    "tickers": outlier_tickers,
+                    "values": outlier_values,
+                    "bounds": (lower_bound, upper_bound),
+                }
+            )
             total_outliers += outlier_count
 
             # Remove outliers
             df = df[~outlier_mask]
 
             print(f"  [WARN]  {col}: Removed {outlier_count} outliers")
-            for ticker, value in zip(outlier_tickers[:3], outlier_values[:3]):  # Show first 3
-                print(f"      {ticker}: {value:.2f} (bounds: {lower_bound:.2f} to {upper_bound:.2f})")
+            for ticker, value in zip(
+                outlier_tickers[:3], outlier_values[:3]
+            ):  # Show first 3
+                print(
+                    f"      {ticker}: {value:.2f} (bounds: {lower_bound:.2f} to {upper_bound:.2f})"
+                )
             if outlier_count > 3:
                 print(f"      ... and {outlier_count - 3} more")
 
     if total_outliers == 0:
         print("  [OK] No outliers detected - data quality looks good")
     else:
-        print(f"\n  Total outliers removed: {total_outliers} data points across {len(outliers_found)} metrics")
+        print(
+            f"\n  Total outliers removed: {total_outliers} data points across {len(outliers_found)} metrics"
+        )
         print(f"  Remaining stocks: {len(df)}")
 
     return df
@@ -1156,6 +1304,7 @@ def detect_and_remove_outliers(df: pd.DataFrame) -> pd.DataFrame:
 # =============================================================================
 # POST-SCREENING FILTERS
 # =============================================================================
+
 
 def apply_post_screening_filters(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -1177,40 +1326,63 @@ def apply_post_screening_filters(df: pd.DataFrame) -> pd.DataFrame:
 
     # DEBUG: Track initial state for debug tickers
     for ticker in DEBUG_TICKERS:
-        if ticker in df['Ticker'].values:
-            row = df[df['Ticker'] == ticker].iloc[0]
+        if ticker in df["Ticker"].values:
+            row = df[df["Ticker"] == ticker].iloc[0]
             details = {
-                'P/E': f"{row.get('P/E', 'N/A'):.1f}" if pd.notna(row.get('P/E')) else 'N/A',
-                'Oper M': f"{row.get('Oper M', 'N/A'):.1f}%" if pd.notna(row.get('Oper M')) else 'N/A',
-                'ROE': f"{row.get('ROE', 'N/A'):.1f}%" if pd.notna(row.get('ROE')) else 'N/A',
-                'Curr R': f"{row.get('Curr R', 'N/A'):.2f}" if pd.notna(row.get('Curr R')) else 'N/A',
-                'Debt/Eq': f"{row.get('Debt/Eq', 'N/A'):.2f}" if pd.notna(row.get('Debt/Eq')) else 'N/A',
-                'Gross M': f"{row.get('Gross M', 'N/A'):.1f}%" if pd.notna(row.get('Gross M')) else 'N/A',
-                'Sector': row.get('Sector', 'N/A'),
+                "P/E": f"{row.get('P/E', 'N/A'):.1f}"
+                if pd.notna(row.get("P/E"))
+                else "N/A",
+                "Oper M": f"{row.get('Oper M', 'N/A'):.1f}%"
+                if pd.notna(row.get("Oper M"))
+                else "N/A",
+                "ROE": f"{row.get('ROE', 'N/A'):.1f}%"
+                if pd.notna(row.get("ROE"))
+                else "N/A",
+                "Curr R": f"{row.get('Curr R', 'N/A'):.2f}"
+                if pd.notna(row.get("Curr R"))
+                else "N/A",
+                "Debt/Eq": f"{row.get('Debt/Eq', 'N/A'):.2f}"
+                if pd.notna(row.get("Debt/Eq"))
+                else "N/A",
+                "Gross M": f"{row.get('Gross M', 'N/A'):.1f}%"
+                if pd.notna(row.get("Gross M"))
+                else "N/A",
+                "Sector": row.get("Sector", "N/A"),
             }
-            log_debug_ticker("Stage 2: Post-Filters START", ticker, "PRESENT",
-                           f"Entering post-screening filters", details)
+            log_debug_ticker(
+                "Stage 2: Post-Filters START",
+                ticker,
+                "PRESENT",
+                "Entering post-screening filters",
+                details,
+            )
 
     # FMP returns numeric data already, no string conversion needed!
     # Columns are already: Oper M, ROE, Curr R, Debt/Eq, etc. (numeric percentages)
 
     # Filter 1: P/E ratio < 50 (profitable, allow quality growth stocks)
     # Exempt healthcare stocks with temporary P/E distortions (e.g., CVS restructuring)
-    if 'P/E' in df.columns:
+    if "P/E" in df.columns:
         # DEBUG: Check debug tickers before filter
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                pe_val = row.get('P/E', 0)
-                is_healthcare = row.get('Sector') == 'Healthcare'
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                pe_val = row.get("P/E", 0)
+                is_healthcare = row.get("Sector") == "Healthcare"
                 passes = (pe_val <= 50) or (is_healthcare and pe_val < 300)
                 if not passes:
-                    log_debug_ticker("Stage 2: P/E Filter", ticker, "REJECTED",
-                                   f"P/E={pe_val:.1f} > 50 (Healthcare exemption: {is_healthcare})")
+                    log_debug_ticker(
+                        "Stage 2: P/E Filter",
+                        ticker,
+                        "REJECTED",
+                        f"P/E={pe_val:.1f} > 50 (Healthcare exemption: {is_healthcare})",
+                    )
 
         # Healthcare exception for temporary P/E distortions
-        healthcare_exception = (df['Sector'] == 'Healthcare') & (df['P/E'] > 50) & (df['P/E'] < 300)
-        pe_mask = (df['P/E'] > 50) & ~healthcare_exception
+        healthcare_exception = (
+            (df["Sector"] == "Healthcare") & (df["P/E"] > 50) & (df["P/E"] < 300)
+        )
+        pe_mask = (df["P/E"] > 50) & ~healthcare_exception
         df = df[~pe_mask]
         pe_excluded = pe_mask.sum()
         if pe_excluded > 0:
@@ -1218,170 +1390,228 @@ def apply_post_screening_filters(df: pd.DataFrame) -> pd.DataFrame:
 
         # DEBUG: Confirm passage
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                log_debug_ticker("Stage 2: P/E Filter", ticker, "PASSED",
-                               f"P/E={row.get('P/E', 0):.1f} <= 50")
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                log_debug_ticker(
+                    "Stage 2: P/E Filter",
+                    ticker,
+                    "PASSED",
+                    f"P/E={row.get('P/E', 0):.1f} <= 50",
+                )
 
     # Filter 2: Operating margin >2% (stricter than FMP screener default)
-    if 'Oper M' in df.columns:
+    if "Oper M" in df.columns:
         # DEBUG: Check debug tickers before filter
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                op_m = row.get('Oper M', 0)
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                op_m = row.get("Oper M", 0)
                 if op_m < 2.0:
-                    log_debug_ticker("Stage 2: Operating Margin", ticker, "REJECTED",
-                                   f"Operating Margin={op_m:.1f}% < 2%")
+                    log_debug_ticker(
+                        "Stage 2: Operating Margin",
+                        ticker,
+                        "REJECTED",
+                        f"Operating Margin={op_m:.1f}% < 2%",
+                    )
 
-        op_margin_mask = df['Oper M'] < 2.0
+        op_margin_mask = df["Oper M"] < 2.0
         df = df[~op_margin_mask]
         op_margin_excluded = op_margin_mask.sum()
         if op_margin_excluded > 0:
-            print(f"  [X] Excluded {op_margin_excluded} stocks with operating margin <2%")
+            print(
+                f"  [X] Excluded {op_margin_excluded} stocks with operating margin <2%"
+            )
 
         # DEBUG: Confirm passage
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                log_debug_ticker("Stage 2: Operating Margin", ticker, "PASSED",
-                               f"Operating Margin={row.get('Oper M', 0):.1f}% >= 2%")
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                log_debug_ticker(
+                    "Stage 2: Operating Margin",
+                    ticker,
+                    "PASSED",
+                    f"Operating Margin={row.get('Oper M', 0):.1f}% >= 2%",
+                )
 
     # Filter 3: ROE with sector-aware thresholds
     # Utilities: ROE >8% (regulated, lower returns normal)
     # Others: ROE >10% (standard requirement)
-    if 'ROE' in df.columns:
+    if "ROE" in df.columns:
         # DEBUG: Check debug tickers before filter
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                roe = row.get('ROE', 0)
-                is_utility = row.get('Sector') == 'Utilities'
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                roe = row.get("ROE", 0)
+                is_utility = row.get("Sector") == "Utilities"
                 threshold = 8.0 if is_utility else 10.0
                 if roe < threshold:
-                    log_debug_ticker("Stage 2: ROE Filter", ticker, "REJECTED",
-                                   f"ROE={roe:.1f}% < {threshold}% (Sector: {row.get('Sector')})")
+                    log_debug_ticker(
+                        "Stage 2: ROE Filter",
+                        ticker,
+                        "REJECTED",
+                        f"ROE={roe:.1f}% < {threshold}% (Sector: {row.get('Sector')})",
+                    )
 
-        utilities_low_roe = (df['Sector'] == 'Utilities') & (df['ROE'] < 8.0)
-        others_low_roe = (df['Sector'] != 'Utilities') & (df['ROE'] < 10.0)
+        utilities_low_roe = (df["Sector"] == "Utilities") & (df["ROE"] < 8.0)
+        others_low_roe = (df["Sector"] != "Utilities") & (df["ROE"] < 10.0)
         roe_mask = utilities_low_roe | others_low_roe
         df = df[~roe_mask]
         roe_excluded = roe_mask.sum()
         if roe_excluded > 0:
-            print(f"  [X] Excluded {roe_excluded} stocks with ROE below threshold (utilities >8%, others >10%)")
+            print(
+                f"  [X] Excluded {roe_excluded} stocks with ROE below threshold (utilities >8%, others >10%)"
+            )
 
         # DEBUG: Confirm passage
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                is_utility = row.get('Sector') == 'Utilities'
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                is_utility = row.get("Sector") == "Utilities"
                 threshold = 8.0 if is_utility else 10.0
-                log_debug_ticker("Stage 2: ROE Filter", ticker, "PASSED",
-                               f"ROE={row.get('ROE', 0):.1f}% >= {threshold}%")
+                log_debug_ticker(
+                    "Stage 2: ROE Filter",
+                    ticker,
+                    "PASSED",
+                    f"ROE={row.get('ROE', 0):.1f}% >= {threshold}%",
+                )
 
     # Filter 4: Current ratio with sector exemptions
     # Banks have CR < 0.5 by design (deposits = liabilities, regulated differently)
     # Consumer staples/utilities operate at CR 0.6-1.0 (stable cash flows)
     # FULL exemption: Financial Services (banks use deposits, CR meaningless)
     # PARTIAL exemption: Consumer Defensive, Utilities (allow CR 0.6-1.0)
-    if 'Curr R' in df.columns:
-        full_exempt_sectors = ['Financial Services']  # Banks - CR not applicable
-        partial_exempt_sectors = ['Consumer Defensive', 'Utilities']  # Allow 0.6-1.0
+    if "Curr R" in df.columns:
+        full_exempt_sectors = ["Financial Services"]  # Banks - CR not applicable
+        partial_exempt_sectors = ["Consumer Defensive", "Utilities"]  # Allow 0.6-1.0
 
         # DEBUG: Check debug tickers before filter
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                cr = row.get('Curr R', 0)
-                sector = row.get('Sector', '')
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                cr = row.get("Curr R", 0)
+                sector = row.get("Sector", "")
                 is_full_exempt = sector in full_exempt_sectors
                 is_partial_exempt = sector in partial_exempt_sectors
-                threshold = 0.0 if is_full_exempt else (0.6 if is_partial_exempt else 1.0)
+                threshold = (
+                    0.0 if is_full_exempt else (0.6 if is_partial_exempt else 1.0)
+                )
 
-                if not is_full_exempt and ((cr < 0.6) or (cr < 1.0 and not is_partial_exempt)):
-                    log_debug_ticker("Stage 2: Current Ratio", ticker, "REJECTED",
-                                   f"CR={cr:.2f} < {threshold} (Sector: {sector}, Full Exempt: {is_full_exempt}, Partial: {is_partial_exempt})")
+                if not is_full_exempt and (
+                    (cr < 0.6) or (cr < 1.0 and not is_partial_exempt)
+                ):
+                    log_debug_ticker(
+                        "Stage 2: Current Ratio",
+                        ticker,
+                        "REJECTED",
+                        f"CR={cr:.2f} < {threshold} (Sector: {sector}, Full Exempt: {is_full_exempt}, Partial: {is_partial_exempt})",
+                    )
 
         # Exclude if:
         # - Fully exempt sectors: never exclude (always pass)
         # - Partially exempt sectors: exclude only if CR < 0.6
         # - Others: exclude if CR < 1.0
         curr_ratio_mask = (
-            ~df['Sector'].isin(full_exempt_sectors) &  # Not fully exempt
-            (
-                (df['Curr R'] < 0.6) |  # Below floor for partial exempts
-                ((df['Curr R'] < 1.0) & ~df['Sector'].isin(partial_exempt_sectors))  # Below 1.0 for others
+            ~df["Sector"].isin(full_exempt_sectors)  # Not fully exempt
+            & (
+                (df["Curr R"] < 0.6)  # Below floor for partial exempts
+                | (
+                    (df["Curr R"] < 1.0) & ~df["Sector"].isin(partial_exempt_sectors)
+                )  # Below 1.0 for others
             )
         )
         df = df[~curr_ratio_mask]
         curr_excluded = curr_ratio_mask.sum()
         if curr_excluded > 0:
-            print(f"  [X] Excluded {curr_excluded} stocks with current ratio <0.6 (or <1.0 for non-exempt sectors)")
+            print(
+                f"  [X] Excluded {curr_excluded} stocks with current ratio <0.6 (or <1.0 for non-exempt sectors)"
+            )
 
         # DEBUG: Confirm passage
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                sector = row.get('Sector', '')
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                sector = row.get("Sector", "")
                 is_exempt = sector in full_exempt_sectors
-                log_debug_ticker("Stage 2: Current Ratio", ticker, "PASSED",
-                               f"CR={row.get('Curr R', 0):.2f} (Sector: {sector}, Exempt: {is_exempt})")
+                log_debug_ticker(
+                    "Stage 2: Current Ratio",
+                    ticker,
+                    "PASSED",
+                    f"CR={row.get('Curr R', 0):.2f} (Sector: {sector}, Exempt: {is_exempt})",
+                )
 
     # Filter 5: Debt/Equity with sector exemptions
     # Financial Services: EXEMPT (deposits = liabilities, D/E meaningless for banks)
     # Consumer Defensive: Allow D/E up to 2.0 (staples use debt for buybacks, dividends)
     # Others: D/E <1.0 (conservative)
-    if 'Debt/Eq' in df.columns:
+    if "Debt/Eq" in df.columns:
         # Fully exempt Financial Services (banks use deposits, D/E ratio doesn't apply)
-        full_exempt_sectors = ['Financial Services']
+        full_exempt_sectors = ["Financial Services"]
 
         # DEBUG: Check debug tickers before filter
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                de = row.get('Debt/Eq', 0)
-                sector = row.get('Sector', '')
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                de = row.get("Debt/Eq", 0)
+                sector = row.get("Sector", "")
                 is_exempt = sector in full_exempt_sectors
-                is_consumer_def = sector == 'Consumer Defensive'
-                threshold = float('inf') if is_exempt else (2.0 if is_consumer_def else 1.0)
+                is_consumer_def = sector == "Consumer Defensive"
+                threshold = (
+                    float("inf") if is_exempt else (2.0 if is_consumer_def else 1.0)
+                )
 
                 if not is_exempt and de > threshold:
-                    log_debug_ticker("Stage 2: Debt/Equity", ticker, "REJECTED",
-                                   f"D/E={de:.2f} > {threshold} (Sector: {sector})")
+                    log_debug_ticker(
+                        "Stage 2: Debt/Equity",
+                        ticker,
+                        "REJECTED",
+                        f"D/E={de:.2f} > {threshold} (Sector: {sector})",
+                    )
 
         # Consumer Defensive gets relaxed threshold
-        consumer_defensive_high_debt = (df['Sector'] == 'Consumer Defensive') & (df['Debt/Eq'] > 2.0)
+        consumer_defensive_high_debt = (df["Sector"] == "Consumer Defensive") & (
+            df["Debt/Eq"] > 2.0
+        )
         # Others get strict threshold, unless fully exempt
         others_high_debt = (
-            ~df['Sector'].isin(full_exempt_sectors) &
-            (df['Sector'] != 'Consumer Defensive') &
-            (df['Debt/Eq'] > 1.0)
+            ~df["Sector"].isin(full_exempt_sectors)
+            & (df["Sector"] != "Consumer Defensive")
+            & (df["Debt/Eq"] > 1.0)
         )
         debt_mask = consumer_defensive_high_debt | others_high_debt
         df = df[~debt_mask]
         debt_excluded = debt_mask.sum()
         if debt_excluded > 0:
-            print(f"  [X] Excluded {debt_excluded} stocks with debt/equity above threshold (staples >2.0, others >1.0, financials exempt)")
+            print(
+                f"  [X] Excluded {debt_excluded} stocks with debt/equity above threshold (staples >2.0, others >1.0, financials exempt)"
+            )
 
         # DEBUG: Confirm passage
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                log_debug_ticker("Stage 2: Debt/Equity", ticker, "PASSED",
-                               f"D/E={row.get('Debt/Eq', 0):.2f}")
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                log_debug_ticker(
+                    "Stage 2: Debt/Equity",
+                    ticker,
+                    "PASSED",
+                    f"D/E={row.get('Debt/Eq', 0):.2f}",
+                )
 
     # Filter 6: Gross margin >15% (meaningful pricing power)
-    if 'Gross M' in df.columns:
+    if "Gross M" in df.columns:
         # DEBUG: Check debug tickers before filter
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                gm = row.get('Gross M', 0)
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                gm = row.get("Gross M", 0)
                 if gm < 15.0:
-                    log_debug_ticker("Stage 2: Gross Margin", ticker, "REJECTED",
-                                   f"Gross Margin={gm:.1f}% < 15%")
+                    log_debug_ticker(
+                        "Stage 2: Gross Margin",
+                        ticker,
+                        "REJECTED",
+                        f"Gross Margin={gm:.1f}% < 15%",
+                    )
 
-        gross_margin_mask = df['Gross M'] < 15.0
+        gross_margin_mask = df["Gross M"] < 15.0
         df = df[~gross_margin_mask]
         gross_excluded = gross_margin_mask.sum()
         if gross_excluded > 0:
@@ -1389,27 +1619,37 @@ def apply_post_screening_filters(df: pd.DataFrame) -> pd.DataFrame:
 
         # DEBUG: Confirm passage
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                log_debug_ticker("Stage 2: Gross Margin", ticker, "PASSED",
-                               f"Gross Margin={row.get('Gross M', 0):.1f}% >= 15%")
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                log_debug_ticker(
+                    "Stage 2: Gross Margin",
+                    ticker,
+                    "PASSED",
+                    f"Gross Margin={row.get('Gross M', 0):.1f}% >= 15%",
+                )
 
     # Filter 7: Biotech exclusion (binary FDA risk)
-    if 'Industry' in df.columns and 'Sector' in df.columns:
+    if "Industry" in df.columns and "Sector" in df.columns:
         # DEBUG: Check debug tickers before filter
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                industry = row.get('Industry', '')
-                is_biotech = 'Biotechnology' in str(industry) and row.get('Sector') == 'Healthcare'
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                industry = row.get("Industry", "")
+                is_biotech = (
+                    "Biotechnology" in str(industry)
+                    and row.get("Sector") == "Healthcare"
+                )
                 if is_biotech:
-                    log_debug_ticker("Stage 2: Biotech Exclusion", ticker, "REJECTED",
-                                   f"Industry={industry} (Biotech in Healthcare)")
+                    log_debug_ticker(
+                        "Stage 2: Biotech Exclusion",
+                        ticker,
+                        "REJECTED",
+                        f"Industry={industry} (Biotech in Healthcare)",
+                    )
 
-        biotech_mask = (
-            df['Industry'].str.contains('Biotechnology', na=False, case=False) &
-            (df['Sector'] == 'Healthcare')
-        )
+        biotech_mask = df["Industry"].str.contains(
+            "Biotechnology", na=False, case=False
+        ) & (df["Sector"] == "Healthcare")
         df = df[~biotech_mask]
         biotech_excluded = biotech_mask.sum()
         if biotech_excluded > 0:
@@ -1417,29 +1657,49 @@ def apply_post_screening_filters(df: pd.DataFrame) -> pd.DataFrame:
 
         # DEBUG: Confirm passage
         for ticker in DEBUG_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                log_debug_ticker("Stage 2: Biotech Exclusion", ticker, "PASSED",
-                               f"Industry={row.get('Industry', 'N/A')}")
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                log_debug_ticker(
+                    "Stage 2: Biotech Exclusion",
+                    ticker,
+                    "PASSED",
+                    f"Industry={row.get('Industry', 'N/A')}",
+                )
 
     final_count = len(df)
-    print(f"  Quality stocks remaining: {final_count} (filtered {original_count - final_count})")
+    print(
+        f"  Quality stocks remaining: {final_count} (filtered {original_count - final_count})"
+    )
 
     # DEBUG: Final status after post-screening filters
     for ticker in DEBUG_TICKERS:
-        if ticker in df['Ticker'].values:
-            row = df[df['Ticker'] == ticker].iloc[0]
-            log_debug_ticker("Stage 2: Post-Filters END", ticker, "PASSED",
-                           f"Survived all post-screening filters ({final_count} stocks remain)",
-                           {'Score': f"{row.get('Quality_Score', 0):.1f}" if 'Quality_Score' in df.columns else 'N/A'})
+        if ticker in df["Ticker"].values:
+            row = df[df["Ticker"] == ticker].iloc[0]
+            log_debug_ticker(
+                "Stage 2: Post-Filters END",
+                ticker,
+                "PASSED",
+                f"Survived all post-screening filters ({final_count} stocks remain)",
+                {
+                    "Score": f"{row.get('Quality_Score', 0):.1f}"
+                    if "Quality_Score" in df.columns
+                    else "N/A"
+                },
+            )
         else:
-            log_debug_ticker("Stage 2: Post-Filters END", ticker, "EXCLUDED",
-                           "Filtered out during post-screening (check above for reason)")
+            log_debug_ticker(
+                "Stage 2: Post-Filters END",
+                ticker,
+                "EXCLUDED",
+                "Filtered out during post-screening (check above for reason)",
+            )
 
     # Diagnostic: Track which defensive stocks survived filters
-    DEFENSIVE_TICKERS = ['KO', 'PG', 'WMT', 'JNJ', 'CVS', 'PFE', 'CL', 'COST']
-    surviving = [t for t in DEFENSIVE_TICKERS if t in df['Ticker'].values]
-    print(f"\n[DIAGNOSTIC] Defensive stocks after filters: {surviving if surviving else 'NONE'}")
+    DEFENSIVE_TICKERS = ["KO", "PG", "WMT", "JNJ", "CVS", "PFE", "CL", "COST"]
+    surviving = [t for t in DEFENSIVE_TICKERS if t in df["Ticker"].values]
+    print(
+        f"\n[DIAGNOSTIC] Defensive stocks after filters: {surviving if surviving else 'NONE'}"
+    )
 
     return df
 
@@ -1466,7 +1726,7 @@ def apply_advanced_filters(df: pd.DataFrame) -> pd.DataFrame:
 
     # Only filter stocks that have advanced data (top N from previous step)
     # Stocks without advanced data are excluded by default
-    has_advanced_data = df['Altman_Z'].notna()
+    has_advanced_data = df["Altman_Z"].notna()
     df_with_data = df[has_advanced_data].copy()
     stocks_without_data = (~has_advanced_data).sum()
 
@@ -1475,21 +1735,35 @@ def apply_advanced_filters(df: pd.DataFrame) -> pd.DataFrame:
 
     # DEBUG: Check if debug tickers have advanced data
     for ticker in DEBUG_TICKERS:
-        if ticker in df['Ticker'].values:
-            has_data = ticker in df_with_data['Ticker'].values
+        if ticker in df["Ticker"].values:
+            has_data = ticker in df_with_data["Ticker"].values
             if has_data:
-                row = df_with_data[df_with_data['Ticker'] == ticker].iloc[0]
-                log_debug_ticker("Stage 4: Advanced Filters START", ticker, "PRESENT",
-                               "Has advanced data, entering advanced filters",
-                               {
-                                   'Altman_Z': f"{row.get('Altman_Z', 0):.2f}" if pd.notna(row.get('Altman_Z')) else 'N/A',
-                                   'Piotroski': f"{row.get('Piotroski', 0):.0f}" if pd.notna(row.get('Piotroski')) else 'N/A',
-                                   'Buy%': f"{row.get('Analyst_Buy_Pct', 0):.1f}%" if pd.notna(row.get('Analyst_Buy_Pct')) else 'N/A',
-                                   'Sector': row.get('Sector', 'N/A'),
-                               })
+                row = df_with_data[df_with_data["Ticker"] == ticker].iloc[0]
+                log_debug_ticker(
+                    "Stage 4: Advanced Filters START",
+                    ticker,
+                    "PRESENT",
+                    "Has advanced data, entering advanced filters",
+                    {
+                        "Altman_Z": f"{row.get('Altman_Z', 0):.2f}"
+                        if pd.notna(row.get("Altman_Z"))
+                        else "N/A",
+                        "Piotroski": f"{row.get('Piotroski', 0):.0f}"
+                        if pd.notna(row.get("Piotroski"))
+                        else "N/A",
+                        "Buy%": f"{row.get('Analyst_Buy_Pct', 0):.1f}%"
+                        if pd.notna(row.get("Analyst_Buy_Pct"))
+                        else "N/A",
+                        "Sector": row.get("Sector", "N/A"),
+                    },
+                )
             else:
-                log_debug_ticker("Stage 4: Advanced Filters START", ticker, "EXCLUDED",
-                               "NO advanced data - stock is excluded from advanced filtering")
+                log_debug_ticker(
+                    "Stage 4: Advanced Filters START",
+                    ticker,
+                    "EXCLUDED",
+                    "NO advanced data - stock is excluded from advanced filtering",
+                )
 
     if len(df_with_data) == 0:
         print("  WARNING: No stocks have advanced data, skipping advanced filters")
@@ -1498,15 +1772,17 @@ def apply_advanced_filters(df: pd.DataFrame) -> pd.DataFrame:
     # ═══════════════════════════════════════════════════════════════
     # DIAGNOSTIC: Track blue-chip survival through filtering
     # ═══════════════════════════════════════════════════════════════
-    TRACKED_BLUE_CHIPS = ['JPM', 'WFC', 'JNJ', 'WMT', 'USB', 'PFE', 'BAC', 'KO', 'PG']
+    TRACKED_BLUE_CHIPS = ["JPM", "WFC", "JNJ", "WMT", "USB", "PFE", "BAC", "KO", "PG"]
     print("\n  Blue-chip status before filtering:")
     for ticker in TRACKED_BLUE_CHIPS:
-        if ticker in df_with_data['Ticker'].values:
-            row = df_with_data[df_with_data['Ticker'] == ticker].iloc[0]
-            altman = row.get('Altman_Z', 'N/A')
-            piotroski = row.get('Piotroski', 'N/A')
-            sector = row.get('Sector', 'N/A')
-            print(f"    {ticker:6s} | Z: {altman:>5.1f} | P: {piotroski:>2.0f} | {sector}")
+        if ticker in df_with_data["Ticker"].values:
+            row = df_with_data[df_with_data["Ticker"] == ticker].iloc[0]
+            altman = row.get("Altman_Z", "N/A")
+            piotroski = row.get("Piotroski", "N/A")
+            sector = row.get("Sector", "N/A")
+            print(
+                f"    {ticker:6s} | Z: {altman:>5.1f} | P: {piotroski:>2.0f} | {sector}"
+            )
 
     # Track exclusions
     excluded_z = []
@@ -1515,88 +1791,132 @@ def apply_advanced_filters(df: pd.DataFrame) -> pd.DataFrame:
 
     # Filter 1: Altman Z-Score > 2.0 (bankruptcy safety)
     # EXEMPT Financial Services - banks structurally have low Altman Z (debt is their business)
-    z_min = ADVANCED_FILTER_THRESHOLDS['altman_z_min']
-    is_financial = df_with_data['Sector'] == 'Financial Services'
-    z_mask = (df_with_data['Altman_Z'] >= z_min) | is_financial
+    z_min = ADVANCED_FILTER_THRESHOLDS["altman_z_min"]
+    is_financial = df_with_data["Sector"] == "Financial Services"
+    z_mask = (df_with_data["Altman_Z"] >= z_min) | is_financial
 
     # DEBUG: Check debug tickers for Altman Z filter
     for ticker in DEBUG_TICKERS:
-        if ticker in df_with_data['Ticker'].values:
-            row = df_with_data[df_with_data['Ticker'] == ticker].iloc[0]
-            z_score = row.get('Altman_Z', 0)
-            sector = row.get('Sector', '')
-            is_exempt = sector == 'Financial Services'
+        if ticker in df_with_data["Ticker"].values:
+            row = df_with_data[df_with_data["Ticker"] == ticker].iloc[0]
+            z_score = row.get("Altman_Z", 0)
+            sector = row.get("Sector", "")
+            is_exempt = sector == "Financial Services"
             passes = z_score >= z_min or is_exempt
             if passes:
-                log_debug_ticker("Stage 4: Altman Z Filter", ticker, "PASSED",
-                               f"Z={z_score:.2f} >= {z_min} (or Financial Services exempt: {is_exempt})")
+                log_debug_ticker(
+                    "Stage 4: Altman Z Filter",
+                    ticker,
+                    "PASSED",
+                    f"Z={z_score:.2f} >= {z_min} (or Financial Services exempt: {is_exempt})",
+                )
             else:
-                log_debug_ticker("Stage 4: Altman Z Filter", ticker, "REJECTED",
-                               f"Z={z_score:.2f} < {z_min} (Financial exempt: {is_exempt})")
+                log_debug_ticker(
+                    "Stage 4: Altman Z Filter",
+                    ticker,
+                    "REJECTED",
+                    f"Z={z_score:.2f} < {z_min} (Financial exempt: {is_exempt})",
+                )
 
-    excluded_z = df_with_data[~z_mask]['Ticker'].tolist()
+    excluded_z = df_with_data[~z_mask]["Ticker"].tolist()
     if len(excluded_z) > 0:
-        print(f"  Excluded {len(excluded_z)} stocks with Altman Z < {z_min}: {excluded_z[:5]}{'...' if len(excluded_z) > 5 else ''}")
-    print(f"  [INFO] Financial Services ({is_financial.sum()} stocks) exempted from Altman Z filter")
+        print(
+            f"  Excluded {len(excluded_z)} stocks with Altman Z < {z_min}: {excluded_z[:5]}{'...' if len(excluded_z) > 5 else ''}"
+        )
+    print(
+        f"  [INFO] Financial Services ({is_financial.sum()} stocks) exempted from Altman Z filter"
+    )
 
     # Filter 2: Piotroski Score >= 4 (quality threshold) - Relaxed from 5
     # Exempt Consumer Defensive - stable businesses often score lower due to mature operations
     p_min = 4  # Relaxed from ADVANCED_FILTER_THRESHOLDS['piotroski_min'] (was 5)
-    p_mask = (df_with_data['Piotroski'] >= p_min) | (df_with_data['Sector'] == 'Consumer Defensive')
+    p_mask = (df_with_data["Piotroski"] >= p_min) | (
+        df_with_data["Sector"] == "Consumer Defensive"
+    )
 
     # DEBUG: Check debug tickers for Piotroski filter
     for ticker in DEBUG_TICKERS:
-        if ticker in df_with_data['Ticker'].values:
-            row = df_with_data[df_with_data['Ticker'] == ticker].iloc[0]
-            p_score = row.get('Piotroski', 0)
-            sector = row.get('Sector', '')
-            is_exempt = sector == 'Consumer Defensive'
+        if ticker in df_with_data["Ticker"].values:
+            row = df_with_data[df_with_data["Ticker"] == ticker].iloc[0]
+            p_score = row.get("Piotroski", 0)
+            sector = row.get("Sector", "")
+            is_exempt = sector == "Consumer Defensive"
             passes = p_score >= p_min or is_exempt
             if passes:
-                log_debug_ticker("Stage 4: Piotroski Filter", ticker, "PASSED",
-                               f"Piotroski={p_score:.0f} >= {p_min} (or Consumer Defensive exempt: {is_exempt})")
+                log_debug_ticker(
+                    "Stage 4: Piotroski Filter",
+                    ticker,
+                    "PASSED",
+                    f"Piotroski={p_score:.0f} >= {p_min} (or Consumer Defensive exempt: {is_exempt})",
+                )
             else:
-                log_debug_ticker("Stage 4: Piotroski Filter", ticker, "REJECTED",
-                               f"Piotroski={p_score:.0f} < {p_min} (Consumer Defensive exempt: {is_exempt})")
+                log_debug_ticker(
+                    "Stage 4: Piotroski Filter",
+                    ticker,
+                    "REJECTED",
+                    f"Piotroski={p_score:.0f} < {p_min} (Consumer Defensive exempt: {is_exempt})",
+                )
 
-    excluded_p = df_with_data[~p_mask]['Ticker'].tolist()
+    excluded_p = df_with_data[~p_mask]["Ticker"].tolist()
     if len(excluded_p) > 0:
-        print(f"  Excluded {len(excluded_p)} stocks with Piotroski < {p_min}: {excluded_p[:5]}{'...' if len(excluded_p) > 5 else ''}")
+        print(
+            f"  Excluded {len(excluded_p)} stocks with Piotroski < {p_min}: {excluded_p[:5]}{'...' if len(excluded_p) > 5 else ''}"
+        )
 
     # Filter 3: Analyst Buy% > 40% (reasonable sentiment)
     # Exempt defensive sectors - mature businesses often have conservative analyst ratings
     # Banks, pharma, staples are income/stability plays, not growth → analysts give HOLD ratings
-    buy_min = ADVANCED_FILTER_THRESHOLDS['analyst_buy_pct_min']
-    analyst_exempt_sectors = ['Financial Services', 'Consumer Defensive', 'Healthcare']
-    buy_mask = (df_with_data['Analyst_Buy_Pct'] >= buy_min) | df_with_data['Sector'].isin(analyst_exempt_sectors)
+    buy_min = ADVANCED_FILTER_THRESHOLDS["analyst_buy_pct_min"]
+    analyst_exempt_sectors = ["Financial Services", "Consumer Defensive", "Healthcare"]
+    buy_mask = (df_with_data["Analyst_Buy_Pct"] >= buy_min) | df_with_data[
+        "Sector"
+    ].isin(analyst_exempt_sectors)
 
     # DEBUG: Check debug tickers for Analyst Buy% filter
     for ticker in DEBUG_TICKERS:
-        if ticker in df_with_data['Ticker'].values:
-            row = df_with_data[df_with_data['Ticker'] == ticker].iloc[0]
-            buy_pct = row.get('Analyst_Buy_Pct', 0)
-            sector = row.get('Sector', '')
+        if ticker in df_with_data["Ticker"].values:
+            row = df_with_data[df_with_data["Ticker"] == ticker].iloc[0]
+            buy_pct = row.get("Analyst_Buy_Pct", 0)
+            sector = row.get("Sector", "")
             is_exempt = sector in analyst_exempt_sectors
             passes = buy_pct >= buy_min or is_exempt
             if passes:
-                log_debug_ticker("Stage 4: Analyst Buy% Filter", ticker, "PASSED",
-                               f"Buy%={buy_pct:.1f}% >= {buy_min}% (or sector exempt: {is_exempt}, Sector: {sector})")
+                log_debug_ticker(
+                    "Stage 4: Analyst Buy% Filter",
+                    ticker,
+                    "PASSED",
+                    f"Buy%={buy_pct:.1f}% >= {buy_min}% (or sector exempt: {is_exempt}, Sector: {sector})",
+                )
             else:
-                log_debug_ticker("Stage 4: Analyst Buy% Filter", ticker, "REJECTED",
-                               f"Buy%={buy_pct:.1f}% < {buy_min}% (sector exempt: {is_exempt}, Sector: {sector})")
+                log_debug_ticker(
+                    "Stage 4: Analyst Buy% Filter",
+                    ticker,
+                    "REJECTED",
+                    f"Buy%={buy_pct:.1f}% < {buy_min}% (sector exempt: {is_exempt}, Sector: {sector})",
+                )
 
-    excluded_buy = df_with_data[~buy_mask]['Ticker'].tolist()
+    excluded_buy = df_with_data[~buy_mask]["Ticker"].tolist()
     if len(excluded_buy) > 0:
-        print(f"  Excluded {len(excluded_buy)} stocks with Analyst Buy% < {buy_min}%: {excluded_buy[:5]}{'...' if len(excluded_buy) > 5 else ''}")
+        print(
+            f"  Excluded {len(excluded_buy)} stocks with Analyst Buy% < {buy_min}%: {excluded_buy[:5]}{'...' if len(excluded_buy) > 5 else ''}"
+        )
 
     # Combine all filters
     combined_mask = z_mask & p_mask & buy_mask
     df_filtered = df_with_data[combined_mask]
 
     # Diagnostic: Blue-chip survival after filtering
-    surviving_blue_chips = [t for t in TRACKED_BLUE_CHIPS if t in df_filtered['Ticker'].values]
-    filtered_blue_chips = [t for t in TRACKED_BLUE_CHIPS if t in df_with_data['Ticker'].values and t not in surviving_blue_chips]
-    print(f"\n  Blue-chip survival: {len(surviving_blue_chips)}/{len(TRACKED_BLUE_CHIPS)}")
+    surviving_blue_chips = [
+        t for t in TRACKED_BLUE_CHIPS if t in df_filtered["Ticker"].values
+    ]
+    filtered_blue_chips = [
+        t
+        for t in TRACKED_BLUE_CHIPS
+        if t in df_with_data["Ticker"].values and t not in surviving_blue_chips
+    ]
+    print(
+        f"\n  Blue-chip survival: {len(surviving_blue_chips)}/{len(TRACKED_BLUE_CHIPS)}"
+    )
     if surviving_blue_chips:
         print(f"    Survived: {', '.join(surviving_blue_chips)}")
     if filtered_blue_chips:
@@ -1604,22 +1924,40 @@ def apply_advanced_filters(df: pd.DataFrame) -> pd.DataFrame:
 
     final_count = len(df_filtered)
     print(f"\n  Advanced filtering: {original_count} -> {final_count} stocks")
-    print(f"  (Excluded {original_count - final_count} stocks failing advanced criteria)")
+    print(
+        f"  (Excluded {original_count - final_count} stocks failing advanced criteria)"
+    )
 
     # DEBUG: Final status after advanced filters
     for ticker in DEBUG_TICKERS:
-        if ticker in df_filtered['Ticker'].values:
-            row = df_filtered[df_filtered['Ticker'] == ticker].iloc[0]
-            log_debug_ticker("Stage 4: Advanced Filters END", ticker, "PASSED",
-                           f"Survived all advanced filters ({final_count} stocks remain)",
-                           {'Score': f"{row.get('Quality_Score', 0):.1f}" if 'Quality_Score' in df_filtered.columns else 'N/A'})
-        elif ticker in df_with_data['Ticker'].values:
+        if ticker in df_filtered["Ticker"].values:
+            row = df_filtered[df_filtered["Ticker"] == ticker].iloc[0]
+            log_debug_ticker(
+                "Stage 4: Advanced Filters END",
+                ticker,
+                "PASSED",
+                f"Survived all advanced filters ({final_count} stocks remain)",
+                {
+                    "Score": f"{row.get('Quality_Score', 0):.1f}"
+                    if "Quality_Score" in df_filtered.columns
+                    else "N/A"
+                },
+            )
+        elif ticker in df_with_data["Ticker"].values:
             # Was in dataset but filtered out
-            log_debug_ticker("Stage 4: Advanced Filters END", ticker, "EXCLUDED",
-                           "Filtered out during advanced filters (check above for specific filter)")
-        elif ticker in df['Ticker'].values:
-            log_debug_ticker("Stage 4: Advanced Filters END", ticker, "EXCLUDED",
-                           "No advanced data - excluded before filters applied")
+            log_debug_ticker(
+                "Stage 4: Advanced Filters END",
+                ticker,
+                "EXCLUDED",
+                "Filtered out during advanced filters (check above for specific filter)",
+            )
+        elif ticker in df["Ticker"].values:
+            log_debug_ticker(
+                "Stage 4: Advanced Filters END",
+                ticker,
+                "EXCLUDED",
+                "No advanced data - excluded before filters applied",
+            )
         # If not in df at all, already tracked earlier
 
     return df_filtered
@@ -1628,6 +1966,7 @@ def apply_advanced_filters(df: pd.DataFrame) -> pd.DataFrame:
 # =============================================================================
 # EARNINGS ENRICHMENT FUNCTIONS
 # =============================================================================
+
 
 def enrich_with_next_earnings(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -1643,18 +1982,17 @@ def enrich_with_next_earnings(df: pd.DataFrame) -> pd.DataFrame:
         DataFrame with 'Next_Earnings' column added
     """
     import yfinance as yf
-    from datetime import datetime
 
     print("\n[Step 2.5/7] Fetching next earnings dates from yfinance...")
     print("  (This may take 30-60 seconds for 15 stocks)")
 
     df = df.copy()
-    df['Next_Earnings'] = None
+    df["Next_Earnings"] = None
 
     success_count = 0
 
     for idx, row in df.iterrows():
-        ticker = row['Ticker']
+        ticker = row["Ticker"]
         try:
             # Fetch stock calendar
             stock = yf.Ticker(ticker)
@@ -1662,25 +2000,33 @@ def enrich_with_next_earnings(df: pd.DataFrame) -> pd.DataFrame:
 
             # Extract next earnings date
             if calendar is not None:
-                if hasattr(calendar, 'get') and 'Earnings Date' in calendar:
-                    earnings_dates = calendar['Earnings Date']
-                elif hasattr(calendar, 'index') and 'Earnings Date' in calendar.index:
-                    earnings_dates = calendar.loc['Earnings Date']
+                if hasattr(calendar, "get") and "Earnings Date" in calendar:
+                    earnings_dates = calendar["Earnings Date"]
+                elif hasattr(calendar, "index") and "Earnings Date" in calendar.index:
+                    earnings_dates = calendar.loc["Earnings Date"]
                 else:
                     earnings_dates = None
 
                 if earnings_dates is not None and len(earnings_dates) > 0:
                     # First date is next earnings
-                    next_earnings = earnings_dates[0] if hasattr(earnings_dates, '__iter__') else earnings_dates
+                    next_earnings = (
+                        earnings_dates[0]
+                        if hasattr(earnings_dates, "__iter__")
+                        else earnings_dates
+                    )
 
                     # Convert to string format
-                    if hasattr(next_earnings, 'strftime'):
-                        earnings_str = next_earnings.strftime('%Y-%m-%d')
-                        df.at[idx, 'Next_Earnings'] = earnings_str
-                        print(f"  [OK] {ticker:8s} -> {next_earnings.strftime('%b %d, %Y')}")
+                    if hasattr(next_earnings, "strftime"):
+                        earnings_str = next_earnings.strftime("%Y-%m-%d")
+                        df.at[idx, "Next_Earnings"] = earnings_str
+                        print(
+                            f"  [OK] {ticker:8s} -> {next_earnings.strftime('%b %d, %Y')}"
+                        )
                         success_count += 1
                     else:
-                        print(f"  [WARN]  {ticker:8s} -> Unexpected format: {next_earnings}")
+                        print(
+                            f"  [WARN]  {ticker:8s} -> Unexpected format: {next_earnings}"
+                        )
                 else:
                     print(f"  [WARN]  {ticker:8s} -> No earnings date found")
             else:
@@ -1693,19 +2039,25 @@ def enrich_with_next_earnings(df: pd.DataFrame) -> pd.DataFrame:
 
     # IMPROVED: Stricter earnings validation (70% threshold, up from 50%)
     success_rate = success_count / len(df) if len(df) > 0 else 0
-    min_rate = DATA_QUALITY_THRESHOLDS['min_earnings_success_rate']
+    min_rate = DATA_QUALITY_THRESHOLDS["min_earnings_success_rate"]
 
     if success_rate < min_rate:
-        print(f"\n  [ERROR] CRITICAL: Earnings fetch success rate too low!")
-        print(f"     Success rate: {success_rate:.1%} (minimum required: {min_rate:.0%})")
-        print(f"     This may indicate yfinance connectivity issues or data quality problems")
-        print(f"     Consider:")
-        print(f"       1. Check internet connectivity")
-        print(f"       2. Try again in a few minutes")
-        print(f"       3. Use manual earnings_calendar.py as fallback")
+        print("\n  [ERROR] CRITICAL: Earnings fetch success rate too low!")
+        print(
+            f"     Success rate: {success_rate:.1%} (minimum required: {min_rate:.0%})"
+        )
+        print(
+            "     This may indicate yfinance connectivity issues or data quality problems"
+        )
+        print("     Consider:")
+        print("       1. Check internet connectivity")
+        print("       2. Try again in a few minutes")
+        print("       3. Use manual earnings_calendar.py as fallback")
 
-        response = input(f"\n  Continue with {success_rate:.1%} earnings coverage? (y/n): ")
-        if response.lower() != 'y':
+        response = input(
+            f"\n  Continue with {success_rate:.1%} earnings coverage? (y/n): "
+        )
+        if response.lower() != "y":
             print("  Aborted. Run again when earnings data improves.")
             exit(1)
 
@@ -1731,25 +2083,32 @@ def validate_free_cash_flow(df: pd.DataFrame) -> pd.DataFrame:
     print("  (This may take 60-90 seconds for 15+ stocks)")
 
     df = df.copy()
-    df['FCF'] = None
-    df['FCF_Margin'] = None
+    df["FCF"] = None
+    df["FCF_Margin"] = None
 
     passed = []
     failed = []
 
     for idx, row in df.iterrows():
-        ticker = row['Ticker']
+        ticker = row["Ticker"]
         try:
             stock = yf.Ticker(ticker)
             cash_flow = stock.cashflow
 
             if cash_flow is not None and len(cash_flow) > 0:
                 # Free Cash Flow = Operating Cash Flow - Capital Expenditures
-                if 'Free Cash Flow' in cash_flow.index:
-                    fcf = cash_flow.loc['Free Cash Flow'].iloc[0] if len(cash_flow.loc['Free Cash Flow']) > 0 else None
-                elif 'Operating Cash Flow' in cash_flow.index and 'Capital Expenditure' in cash_flow.index:
-                    ocf = cash_flow.loc['Operating Cash Flow'].iloc[0]
-                    capex = cash_flow.loc['Capital Expenditure'].iloc[0]
+                if "Free Cash Flow" in cash_flow.index:
+                    fcf = (
+                        cash_flow.loc["Free Cash Flow"].iloc[0]
+                        if len(cash_flow.loc["Free Cash Flow"]) > 0
+                        else None
+                    )
+                elif (
+                    "Operating Cash Flow" in cash_flow.index
+                    and "Capital Expenditure" in cash_flow.index
+                ):
+                    ocf = cash_flow.loc["Operating Cash Flow"].iloc[0]
+                    capex = cash_flow.loc["Capital Expenditure"].iloc[0]
                     fcf = ocf + capex  # capex is negative
                 else:
                     fcf = None
@@ -1757,23 +2116,29 @@ def validate_free_cash_flow(df: pd.DataFrame) -> pd.DataFrame:
                 if fcf is not None:
                     # Get revenue for FCF margin calculation
                     financials = stock.financials
-                    if financials is not None and 'Total Revenue' in financials.index:
-                        revenue = financials.loc['Total Revenue'].iloc[0]
+                    if financials is not None and "Total Revenue" in financials.index:
+                        revenue = financials.loc["Total Revenue"].iloc[0]
                         fcf_margin = (fcf / revenue) * 100 if revenue > 0 else 0
 
-                        df.at[idx, 'FCF'] = fcf
-                        df.at[idx, 'FCF_Margin'] = fcf_margin
+                        df.at[idx, "FCF"] = fcf
+                        df.at[idx, "FCF_Margin"] = fcf_margin
 
                         # Conservative validation: FCF > 0 AND margin > 2%
                         if fcf > 0 and fcf_margin > 2.0:
                             passed.append(ticker)
-                            print(f"  [OK] {ticker:8s} -> FCF: ${fcf/1e9:.2f}B, Margin: {fcf_margin:.1f}%")
+                            print(
+                                f"  [OK] {ticker:8s} -> FCF: ${fcf / 1e9:.2f}B, Margin: {fcf_margin:.1f}%"
+                            )
                         else:
                             failed.append((ticker, fcf, fcf_margin))
-                            print(f"  [ERROR] {ticker:8s} -> FCF: ${fcf/1e9:.2f}B, Margin: {fcf_margin:.1f}% (FAILED)")
+                            print(
+                                f"  [ERROR] {ticker:8s} -> FCF: ${fcf / 1e9:.2f}B, Margin: {fcf_margin:.1f}% (FAILED)"
+                            )
                     else:
                         failed.append((ticker, fcf, None))
-                        print(f"  [WARN]  {ticker:8s} -> FCF available but no revenue data")
+                        print(
+                            f"  [WARN]  {ticker:8s} -> FCF available but no revenue data"
+                        )
                 else:
                     failed.append((ticker, None, None))
                     print(f"  [WARN]  {ticker:8s} -> No FCF data available")
@@ -1785,28 +2150,30 @@ def validate_free_cash_flow(df: pd.DataFrame) -> pd.DataFrame:
             failed.append((ticker, None, None))
             print(f"  [ERROR] {ticker:8s} -> Error: {str(e)[:40]}")
 
-    print(f"\n  FCF Validation Results:")
+    print("\n  FCF Validation Results:")
     print(f"    [OK] Passed: {len(passed)} stocks")
     print(f"    [ERROR] Failed: {len(failed)} stocks")
 
     if failed:
-        print(f"\n  Excluded stocks (negative/low FCF or missing data):")
+        print("\n  Excluded stocks (negative/low FCF or missing data):")
         for ticker, fcf, margin in failed[:10]:  # Show first 10
             if fcf is not None and margin is not None:
-                print(f"    {ticker}: FCF=${fcf/1e9:.2f}B, Margin={margin:.1f}%")
+                print(f"    {ticker}: FCF=${fcf / 1e9:.2f}B, Margin={margin:.1f}%")
             else:
                 print(f"    {ticker}: Missing FCF data")
         if len(failed) > 10:
             print(f"    ... and {len(failed) - 10} more")
 
     # Filter to only passed stocks
-    df_passed = df[df['Ticker'].isin(passed)]
+    df_passed = df[df["Ticker"].isin(passed)]
 
     if len(df_passed) < 15:
-        print(f"\n  [WARN]  WARNING: Only {len(df_passed)} stocks passed FCF validation")
-        print(f"     This is below minimum of 15 stocks for tier distribution")
+        print(
+            f"\n  [WARN]  WARNING: Only {len(df_passed)} stocks passed FCF validation"
+        )
+        print("     This is below minimum of 15 stocks for tier distribution")
         response = input(f"\n  Continue with {len(df_passed)} stocks? (y/n): ")
-        if response.lower() != 'y':
+        if response.lower() != "y":
             print("  Aborted. Consider relaxing FCF threshold.")
             exit(1)
 
@@ -1816,6 +2183,7 @@ def validate_free_cash_flow(df: pd.DataFrame) -> pd.DataFrame:
 # =============================================================================
 # QUALITY SCORING FUNCTIONS
 # =============================================================================
+
 
 def calculate_quality_scores_percentile(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -1846,12 +2214,17 @@ def calculate_quality_scores_percentile(df: pd.DataFrame) -> pd.DataFrame:
 
     # Define scoring metrics: (column_name, score_col_name, weight, is_inverse)
     metrics = [
-        ('Oper M', 'OM_Score', 15, False),      # Operating margin (higher = better)
-        ('ROE', 'ROE_Score', 15, False),        # Return on equity (higher = better)
-        ('Curr R', 'CR_Score', 15, False),      # Current ratio (higher = better)
-        ('Debt/Eq', 'DE_Score', 20, True),      # Debt/equity (LOWER = better, inverse)
-        ('Gross M', 'GM_Score', 10, False),     # Gross margin (higher = better)
-        ('FCF_Margin', 'FCF_Score', 10, False), # Free cash flow margin (higher = better)
+        ("Oper M", "OM_Score", 15, False),  # Operating margin (higher = better)
+        ("ROE", "ROE_Score", 15, False),  # Return on equity (higher = better)
+        ("Curr R", "CR_Score", 15, False),  # Current ratio (higher = better)
+        ("Debt/Eq", "DE_Score", 20, True),  # Debt/equity (LOWER = better, inverse)
+        ("Gross M", "GM_Score", 10, False),  # Gross margin (higher = better)
+        (
+            "FCF_Margin",
+            "FCF_Score",
+            10,
+            False,
+        ),  # Free cash flow margin (higher = better)
     ]
 
     print("\n[SCORING] Calculating quality scores using WITHIN-SECTOR percentiles...")
@@ -1863,54 +2236,72 @@ def calculate_quality_scores_percentile(df: pd.DataFrame) -> pd.DataFrame:
             df[score_col] = 0
             continue
 
-        if 'Sector' not in df.columns:
+        if "Sector" not in df.columns:
             # Fallback to global percentile if no sector data
-            print(f"  [WARN] 'Sector' column not found, using global percentile for {metric}")
-            df[score_col] = df[metric].rank(
-                pct=True,
-                ascending=(not is_inverse),
-                na_option='bottom'
-            ) * weight
+            print(
+                f"  [WARN] 'Sector' column not found, using global percentile for {metric}"
+            )
+            df[score_col] = (
+                df[metric].rank(
+                    pct=True, ascending=(not is_inverse), na_option="bottom"
+                )
+                * weight
+            )
             continue
 
         # Key change: Rank WITHIN SECTOR using groupby
         # Each stock compared only to peers in same sector
-        df[score_col] = df.groupby('Sector')[metric].rank(
-            pct=True,                    # Percentile ranking (0.0 to 1.0)
-            ascending=(not is_inverse),  # Reverse for Debt/Eq (lower is better)
-            na_option='bottom'           # Missing values rank at bottom
-        ) * weight
+        df[score_col] = (
+            df.groupby("Sector")[metric].rank(
+                pct=True,  # Percentile ranking (0.0 to 1.0)
+                ascending=(not is_inverse),  # Reverse for Debt/Eq (lower is better)
+                na_option="bottom",  # Missing values rank at bottom
+            )
+            * weight
+        )
 
         # Handle sectors with only 1 stock (can't rank, give neutral score)
-        sector_sizes = df.groupby('Sector').size()
+        sector_sizes = df.groupby("Sector").size()
         single_stock_sectors = sector_sizes[sector_sizes == 1].index.tolist()
         for sector in single_stock_sectors:
-            sector_mask = df['Sector'] == sector
+            sector_mask = df["Sector"] == sector
             df.loc[sector_mask, score_col] = weight * 0.5  # Neutral 50th percentile
 
     # Sum all components (max 85 points before volume)
-    df['Quality_Score'] = (
-        df['OM_Score'].fillna(0) +
-        df['ROE_Score'].fillna(0) +
-        df['CR_Score'].fillna(0) +
-        df['DE_Score'].fillna(0) +
-        df['GM_Score'].fillna(0) +
-        df['FCF_Score'].fillna(0)
+    df["Quality_Score"] = (
+        df["OM_Score"].fillna(0)
+        + df["ROE_Score"].fillna(0)
+        + df["CR_Score"].fillna(0)
+        + df["DE_Score"].fillna(0)
+        + df["GM_Score"].fillna(0)
+        + df["FCF_Score"].fillna(0)
     )
 
-    print(f"  Base score range: {df['Quality_Score'].min():.1f} - {df['Quality_Score'].max():.1f}")
-    print(f"  (Volume score will add 0-15 points, bringing max to ~100)")
+    print(
+        f"  Base score range: {df['Quality_Score'].min():.1f} - {df['Quality_Score'].max():.1f}"
+    )
+    print("  (Volume score will add 0-15 points, bringing max to ~100)")
 
     # Debug: Show example scoring for Consumer Defensive
-    if 'PG' in df['Ticker'].values:
-        pg_row = df[df['Ticker'] == 'PG'].iloc[0]
-        print(f"\n  [DEBUG] PG score breakdown (Consumer Defensive peer group):")
-        print(f"    Operating Margin: {pg_row.get('Oper M', 0):.1f}% -> {pg_row['OM_Score']:.1f}/15")
+    if "PG" in df["Ticker"].values:
+        pg_row = df[df["Ticker"] == "PG"].iloc[0]
+        print("\n  [DEBUG] PG score breakdown (Consumer Defensive peer group):")
+        print(
+            f"    Operating Margin: {pg_row.get('Oper M', 0):.1f}% -> {pg_row['OM_Score']:.1f}/15"
+        )
         print(f"    ROE: {pg_row.get('ROE', 0):.1f}% -> {pg_row['ROE_Score']:.1f}/15")
-        print(f"    Current Ratio: {pg_row.get('Curr R', 0):.2f} -> {pg_row['CR_Score']:.1f}/15")
-        print(f"    Debt/Equity: {pg_row.get('Debt/Eq', 0):.2f} -> {pg_row['DE_Score']:.1f}/20")
-        print(f"    Gross Margin: {pg_row.get('Gross M', 0):.1f}% -> {pg_row['GM_Score']:.1f}/10")
-        print(f"    FCF Margin: {pg_row.get('FCF_Margin', 0):.1f}% -> {pg_row['FCF_Score']:.1f}/10")
+        print(
+            f"    Current Ratio: {pg_row.get('Curr R', 0):.2f} -> {pg_row['CR_Score']:.1f}/15"
+        )
+        print(
+            f"    Debt/Equity: {pg_row.get('Debt/Eq', 0):.2f} -> {pg_row['DE_Score']:.1f}/20"
+        )
+        print(
+            f"    Gross Margin: {pg_row.get('Gross M', 0):.1f}% -> {pg_row['GM_Score']:.1f}/10"
+        )
+        print(
+            f"    FCF Margin: {pg_row.get('FCF_Margin', 0):.1f}% -> {pg_row['FCF_Score']:.1f}/10"
+        )
         print(f"    Base Total: {pg_row['Quality_Score']:.1f}/85")
 
     return df
@@ -1922,13 +2313,13 @@ def add_volume_percentile(df: pd.DataFrame) -> pd.DataFrame:
     Volume gets 15 points (reduced from 20 to make room for gross margin).
     """
     # Finviz returns this as 'Avg Volume' (abbreviated)
-    if 'Avg Volume' in df.columns and len(df) > 0:
+    if "Avg Volume" in df.columns and len(df) > 0:
         df = df.copy()
-        df['Volume_Score'] = df['Avg Volume'].rank(pct=True, na_option='bottom') * 15
-        df['Quality_Score'] = df['Quality_Score'] + df['Volume_Score']
+        df["Volume_Score"] = df["Avg Volume"].rank(pct=True, na_option="bottom") * 15
+        df["Quality_Score"] = df["Quality_Score"] + df["Volume_Score"]
     else:
         print("  [WARN]  WARNING: 'Avg Volume' column not found")
-        df['Volume_Score'] = 0
+        df["Volume_Score"] = 0
 
     return df
 
@@ -1946,41 +2337,43 @@ def diagnose_missing_blue_chips(df: pd.DataFrame) -> None:
     Args:
         df: DataFrame after initial FMP fetch and post-screening filters
     """
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("MISSING BLUE-CHIP DIAGNOSTIC")
-    print("="*70)
+    print("=" * 70)
 
     EXPECTED_BLUE_CHIPS = {
-        'WMT': {'name': 'Walmart', 'sector': 'Consumer Defensive'},
-        'AAPL': {'name': 'Apple', 'sector': 'Technology'},
-        'CVS': {'name': 'CVS Health', 'sector': 'Healthcare'},
-        'SO': {'name': 'Southern Company', 'sector': 'Utilities'},
-        'DUK': {'name': 'Duke Energy', 'sector': 'Utilities'},
-        'JPM': {'name': 'JPMorgan Chase', 'sector': 'Financial Services'},
-        'WFC': {'name': 'Wells Fargo', 'sector': 'Financial Services'},
-        'USB': {'name': 'US Bancorp', 'sector': 'Financial Services'},
+        "WMT": {"name": "Walmart", "sector": "Consumer Defensive"},
+        "AAPL": {"name": "Apple", "sector": "Technology"},
+        "CVS": {"name": "CVS Health", "sector": "Healthcare"},
+        "SO": {"name": "Southern Company", "sector": "Utilities"},
+        "DUK": {"name": "Duke Energy", "sector": "Utilities"},
+        "JPM": {"name": "JPMorgan Chase", "sector": "Financial Services"},
+        "WFC": {"name": "Wells Fargo", "sector": "Financial Services"},
+        "USB": {"name": "US Bancorp", "sector": "Financial Services"},
     }
 
     present_count = 0
     missing_count = 0
 
     for ticker, info in EXPECTED_BLUE_CHIPS.items():
-        if ticker in df['Ticker'].values:
+        if ticker in df["Ticker"].values:
             present_count += 1
-            row = df[df['Ticker'] == ticker].iloc[0]
+            row = df[df["Ticker"] == ticker].iloc[0]
             print(f"\n[OK] {ticker} ({info['name']}) - PRESENT")
             print(f"  Sector: {row.get('Sector', 'N/A')}")
             print(f"  Price: ${row.get('Price', 0):.2f}")
-            cr = row.get('Curr R', None)
+            cr = row.get("Curr R", None)
             print(f"  Current Ratio: {cr:.2f}" if cr else "  Current Ratio: N/A")
-            fcf = row.get('FCF_Margin', None)
+            fcf = row.get("FCF_Margin", None)
             print(f"  FCF Margin: {fcf:.1f}%" if fcf else "  FCF Margin: N/A")
-            quality = row.get('Quality_Score', 0)
+            quality = row.get("Quality_Score", 0)
             print(f"  Quality Score: {quality:.1f}")
 
             # Check if would pass quality threshold
             if quality < 30:
-                print(f"  [WARN] Quality score {quality:.1f} < 30 threshold (would be excluded)")
+                print(
+                    f"  [WARN] Quality score {quality:.1f} < 30 threshold (would be excluded)"
+                )
             else:
                 print(f"  [OK] Quality score {quality:.1f} >= 30 (passes threshold)")
 
@@ -1988,15 +2381,15 @@ def diagnose_missing_blue_chips(df: pd.DataFrame) -> None:
             missing_count += 1
             print(f"\n[X] {ticker} ({info['name']}) - MISSING")
             print(f"  Expected sector: {info['sector']}")
-            print(f"  Possible reasons:")
-            print(f"    1. Not in FMP S&P 500 constituent list")
-            print(f"    2. Filtered by price/market cap in screener")
-            print(f"    3. Filtered by fundamental metrics (CR, FCF, ROE, Debt/Eq)")
-            print(f"    4. Check FMP data quality for this ticker")
+            print("  Possible reasons:")
+            print("    1. Not in FMP S&P 500 constituent list")
+            print("    2. Filtered by price/market cap in screener")
+            print("    3. Filtered by fundamental metrics (CR, FCF, ROE, Debt/Eq)")
+            print("    4. Check FMP data quality for this ticker")
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print(f"DIAGNOSTIC COMPLETE: {present_count} present, {missing_count} missing")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
 
 def apply_cyclical_penalty(df: pd.DataFrame) -> pd.DataFrame:
@@ -2017,51 +2410,63 @@ def apply_cyclical_penalty(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    if 'Sector' not in df.columns:
+    if "Sector" not in df.columns:
         print("  [WARN] 'Sector' column not found - skipping cyclical penalty")
         return df
 
     # Store original scores for reporting
-    df['Pre_Penalty_Score'] = df['Quality_Score']
+    df["Pre_Penalty_Score"] = df["Quality_Score"]
 
     # Identify cyclical stocks (sectors + crypto + cyclical consumer)
     cyclical_mask = (
-        df['Sector'].isin(CYCLICAL_SECTORS) |
-        df['Ticker'].isin(CRYPTO_TICKERS) |
-        df['Ticker'].isin(CYCLICAL_CONSUMER)
+        df["Sector"].isin(CYCLICAL_SECTORS)
+        | df["Ticker"].isin(CRYPTO_TICKERS)
+        | df["Ticker"].isin(CYCLICAL_CONSUMER)
     )
     cyclical_count = cyclical_mask.sum()
 
     # Identify China ADRs (geopolitical risk)
-    china_mask = df['Ticker'].isin(CHINA_ADRS)
+    china_mask = df["Ticker"].isin(CHINA_ADRS)
     china_count = china_mask.sum()
 
     # Apply 20% penalty to cyclical stocks
     if cyclical_count > 0:
-        df.loc[cyclical_mask, 'Quality_Score'] = df.loc[cyclical_mask, 'Quality_Score'] * CYCLICAL_PENALTY
-        print(f"  Applied {int((1-CYCLICAL_PENALTY)*100)}% penalty to {cyclical_count} cyclical/crypto/consumer stocks")
+        df.loc[cyclical_mask, "Quality_Score"] = (
+            df.loc[cyclical_mask, "Quality_Score"] * CYCLICAL_PENALTY
+        )
+        print(
+            f"  Applied {int((1 - CYCLICAL_PENALTY) * 100)}% penalty to {cyclical_count} cyclical/crypto/consumer stocks"
+        )
 
     # Apply 20% penalty to China ADRs
     if china_count > 0:
-        df.loc[china_mask, 'Quality_Score'] = df.loc[china_mask, 'Quality_Score'] * GEOPOLITICAL_PENALTY
-        print(f"  Applied {int((1-GEOPOLITICAL_PENALTY)*100)}% penalty to {china_count} China ADRs")
+        df.loc[china_mask, "Quality_Score"] = (
+            df.loc[china_mask, "Quality_Score"] * GEOPOLITICAL_PENALTY
+        )
+        print(
+            f"  Applied {int((1 - GEOPOLITICAL_PENALTY) * 100)}% penalty to {china_count} China ADRs"
+        )
 
     # Show top affected stocks (combined)
     all_penalized = cyclical_mask | china_mask
     if all_penalized.sum() > 0:
-        affected = df[all_penalized].nlargest(5, 'Pre_Penalty_Score')[['Ticker', 'Sector', 'Pre_Penalty_Score', 'Quality_Score']]
+        affected = df[all_penalized].nlargest(5, "Pre_Penalty_Score")[
+            ["Ticker", "Sector", "Pre_Penalty_Score", "Quality_Score"]
+        ]
         if not affected.empty:
             print("  Top affected:")
             for _, row in affected.iterrows():
-                if row['Ticker'] in CHINA_ADRS:
-                    label = 'China ADR'
-                elif row['Ticker'] in CRYPTO_TICKERS:
-                    label = 'Crypto'
-                elif row['Ticker'] in CYCLICAL_CONSUMER:
-                    label = 'Cyclical Consumer'
+                if row["Ticker"] in CHINA_ADRS:
+                    label = "China ADR"
+                elif row["Ticker"] in CRYPTO_TICKERS:
+                    label = "Crypto"
+                elif row["Ticker"] in CYCLICAL_CONSUMER:
+                    label = "Cyclical Consumer"
                 else:
-                    label = row['Sector']
-                print(f"    {row['Ticker']}: {row['Pre_Penalty_Score']:.1f} -> {row['Quality_Score']:.1f} ({label})")
+                    label = row["Sector"]
+                print(
+                    f"    {row['Ticker']}: {row['Pre_Penalty_Score']:.1f} -> {row['Quality_Score']:.1f} ({label})"
+                )
 
     return df
 
@@ -2092,32 +2497,44 @@ def apply_bank_quality_floor(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    if 'Ticker' not in df.columns or 'Quality_Score' not in df.columns:
+    if "Ticker" not in df.columns or "Quality_Score" not in df.columns:
         print("  [WARN] Missing Ticker or Quality_Score column - skipping bank floor")
         return df
 
-    print(f"\n[BANK EXEMPTION] Checking {len(TRADITIONAL_BANKS)} traditional bank tickers...")
+    print(
+        f"\n[BANK EXEMPTION] Checking {len(TRADITIONAL_BANKS)} traditional bank tickers..."
+    )
 
-    banks_in_dataset = df[df['Ticker'].isin(TRADITIONAL_BANKS)]
+    banks_in_dataset = df[df["Ticker"].isin(TRADITIONAL_BANKS)]
     print(f"  Found {len(banks_in_dataset)} banks in current dataset")
 
     if not banks_in_dataset.empty:
-        banks_below_threshold = banks_in_dataset[banks_in_dataset['Quality_Score'] < MIN_QUALITY_FLOOR]
+        banks_below_threshold = banks_in_dataset[
+            banks_in_dataset["Quality_Score"] < MIN_QUALITY_FLOOR
+        ]
 
         if not banks_below_threshold.empty:
-            print(f"  Applying quality floor to {len(banks_below_threshold)} banks below threshold:")
+            print(
+                f"  Applying quality floor to {len(banks_below_threshold)} banks below threshold:"
+            )
 
             for idx, row in banks_below_threshold.iterrows():
-                original_score = row['Quality_Score']
-                df.at[idx, 'Quality_Score'] = MIN_QUALITY_FLOOR
-                print(f"    {row['Ticker']}: {original_score:.1f} → {MIN_QUALITY_FLOOR} (FLOORED)")
+                original_score = row["Quality_Score"]
+                df.at[idx, "Quality_Score"] = MIN_QUALITY_FLOOR
+                print(
+                    f"    {row['Ticker']}: {original_score:.1f} → {MIN_QUALITY_FLOOR} (FLOORED)"
+                )
         else:
-            print(f"  [OK] All {len(banks_in_dataset)} banks already above {MIN_QUALITY_FLOOR} threshold")
+            print(
+                f"  [OK] All {len(banks_in_dataset)} banks already above {MIN_QUALITY_FLOOR} threshold"
+            )
 
         # Show final bank scores
-        print(f"\n  Final bank quality scores:")
-        for _, row in df[df['Ticker'].isin(TRADITIONAL_BANKS)].iterrows():
-            print(f"    {row['Ticker']}: {row['Quality_Score']:.1f} (Sector: {row.get('Sector', 'N/A')})")
+        print("\n  Final bank quality scores:")
+        for _, row in df[df["Ticker"].isin(TRADITIONAL_BANKS)].iterrows():
+            print(
+                f"    {row['Ticker']}: {row['Quality_Score']:.1f} (Sector: {row.get('Sector', 'N/A')})"
+            )
 
     return df
 
@@ -2146,57 +2563,57 @@ def calculate_revenue_consistency(df: pd.DataFrame) -> pd.DataFrame:
     fetcher = create_fetcher()
 
     df = df.copy()
-    df['Revenue_CAGR'] = np.nan
-    df['Revenue_Volatility'] = np.nan
-    df['Revenue_Score'] = 0.5  # Neutral default for missing data
+    df["Revenue_CAGR"] = np.nan
+    df["Revenue_Volatility"] = np.nan
+    df["Revenue_Score"] = 0.5  # Neutral default for missing data
 
     success_count = 0
     for idx, row in df.iterrows():
-        ticker = row['Ticker']
+        ticker = row["Ticker"]
 
         try:
             # Fetch 4 years of income statements (gives 3 YoY growth rates)
             statements = fetcher.get_historical_income_statements(ticker, periods=4)
 
             if statements and len(statements) >= 3:
-                revenues = [s.get('revenue', 0) for s in statements[:4]]
+                revenues = [s.get("revenue", 0) for s in statements[:4]]
                 revenues = [r for r in revenues if r and r > 0]
 
                 if len(revenues) >= 3:
                     # Calculate CAGR: (End/Start)^(1/years) - 1
                     years = len(revenues) - 1
                     start_rev = revenues[-1]  # Oldest
-                    end_rev = revenues[0]     # Most recent
+                    end_rev = revenues[0]  # Most recent
 
                     if start_rev > 0:
-                        cagr = ((end_rev / start_rev) ** (1/years) - 1) * 100
-                        df.at[idx, 'Revenue_CAGR'] = cagr
+                        cagr = ((end_rev / start_rev) ** (1 / years) - 1) * 100
+                        df.at[idx, "Revenue_CAGR"] = cagr
 
                         # Calculate volatility (std dev of YoY growth rates)
                         yoy_growths = []
                         for i in range(len(revenues) - 1):
-                            if revenues[i+1] > 0:
-                                yoy = (revenues[i] / revenues[i+1] - 1) * 100
+                            if revenues[i + 1] > 0:
+                                yoy = (revenues[i] / revenues[i + 1] - 1) * 100
                                 yoy_growths.append(yoy)
 
                         if len(yoy_growths) >= 2:
                             volatility = np.std(yoy_growths)
-                            df.at[idx, 'Revenue_Volatility'] = volatility
+                            df.at[idx, "Revenue_Volatility"] = volatility
 
                         success_count += 1
 
-        except Exception as e:
+        except Exception:
             # Silent fail - some stocks won't have data
             continue
 
     # Calculate percentile-based score
     # Higher CAGR = better (60% weight), Lower volatility = better (40% weight)
-    cagr_pct = df['Revenue_CAGR'].rank(pct=True, na_option='keep').fillna(0.5)
-    vol_pct = (1 - df['Revenue_Volatility'].rank(pct=True, na_option='keep').fillna(0.5))
-    df['Revenue_Score'] = cagr_pct * 0.6 + vol_pct * 0.4
+    cagr_pct = df["Revenue_CAGR"].rank(pct=True, na_option="keep").fillna(0.5)
+    vol_pct = 1 - df["Revenue_Volatility"].rank(pct=True, na_option="keep").fillna(0.5)
+    df["Revenue_Score"] = cagr_pct * 0.6 + vol_pct * 0.4
 
     # Summary
-    secular_count = ((df['Revenue_CAGR'] > 5) & (df['Revenue_Volatility'] < 15)).sum()
+    secular_count = ((df["Revenue_CAGR"] > 5) & (df["Revenue_Volatility"] < 15)).sum()
     print(f"  Revenue data found: {success_count}/{len(df)} stocks")
     print(f"  Secular businesses (CAGR >5%, volatility <15%): {secular_count}")
 
@@ -2226,13 +2643,13 @@ def calculate_roe_consistency(df: pd.DataFrame) -> pd.DataFrame:
     fetcher = create_fetcher()
 
     df = df.copy()
-    df['ROE_Avg_5Y'] = np.nan
-    df['ROE_Std_5Y'] = np.nan
-    df['ROE_Consistency_Score'] = 0.5  # Neutral default for missing data
+    df["ROE_Avg_5Y"] = np.nan
+    df["ROE_Std_5Y"] = np.nan
+    df["ROE_Consistency_Score"] = 0.5  # Neutral default for missing data
 
     success_count = 0
     for idx, row in df.iterrows():
-        ticker = row['Ticker']
+        ticker = row["Ticker"]
 
         try:
             # Fetch 5 years of key metrics
@@ -2241,7 +2658,7 @@ def calculate_roe_consistency(df: pd.DataFrame) -> pd.DataFrame:
             if metrics and len(metrics) >= 3:
                 roes = []
                 for m in metrics[:5]:
-                    roe = m.get('returnOnEquity')
+                    roe = m.get("returnOnEquity")
                     if roe is not None and roe > -1.0:  # Filter invalid (>-100%)
                         roes.append(roe * 100)  # Convert to percentage
 
@@ -2249,28 +2666,30 @@ def calculate_roe_consistency(df: pd.DataFrame) -> pd.DataFrame:
                     avg_roe = np.mean(roes)
                     std_roe = np.std(roes)
 
-                    df.at[idx, 'ROE_Avg_5Y'] = avg_roe
-                    df.at[idx, 'ROE_Std_5Y'] = std_roe
+                    df.at[idx, "ROE_Avg_5Y"] = avg_roe
+                    df.at[idx, "ROE_Std_5Y"] = std_roe
                     success_count += 1
 
-        except Exception as e:
+        except Exception:
             continue
 
     # Calculate percentile-based score
     # Higher avg ROE = better (70% weight), Lower std dev = better (30% weight)
-    roe_avg_pct = df['ROE_Avg_5Y'].rank(pct=True, na_option='keep').fillna(0.5)
-    roe_std_pct = (1 - df['ROE_Std_5Y'].rank(pct=True, na_option='keep').fillna(0.5))
-    df['ROE_Consistency_Score'] = roe_avg_pct * 0.7 + roe_std_pct * 0.3
+    roe_avg_pct = df["ROE_Avg_5Y"].rank(pct=True, na_option="keep").fillna(0.5)
+    roe_std_pct = 1 - df["ROE_Std_5Y"].rank(pct=True, na_option="keep").fillna(0.5)
+    df["ROE_Consistency_Score"] = roe_avg_pct * 0.7 + roe_std_pct * 0.3
 
     # Summary
-    consistent_count = ((df['ROE_Avg_5Y'] > 15) & (df['ROE_Std_5Y'] < 5)).sum()
+    consistent_count = ((df["ROE_Avg_5Y"] > 15) & (df["ROE_Std_5Y"] < 5)).sum()
     print(f"  ROE data found: {success_count}/{len(df)} stocks")
     print(f"  Consistent performers (avg >15%, std <5%): {consistent_count}")
 
     return df
 
 
-def enforce_sector_diversity(candidates: List[str], df: pd.DataFrame, tier_size: int = 60) -> List[str]:
+def enforce_sector_diversity(
+    candidates: List[str], df: pd.DataFrame, tier_size: int = 60
+) -> List[str]:
     """
     Select stocks while enforcing sector diversity constraints (Option B soft caps).
 
@@ -2293,9 +2712,9 @@ def enforce_sector_diversity(candidates: List[str], df: pd.DataFrame, tier_size:
     Returns:
         List of selected tickers meeting diversity constraints
     """
-    max_sector_pct = SECTOR_DIVERSITY_CONSTRAINTS.get('max_sector_pct', 0.35)
-    max_sector_hard_cap = SECTOR_DIVERSITY_CONSTRAINTS.get('max_sector_hard_cap', 20)
-    max_cyclical = SECTOR_DIVERSITY_CONSTRAINTS.get('max_cyclical_total', 4)
+    max_sector_pct = SECTOR_DIVERSITY_CONSTRAINTS.get("max_sector_pct", 0.35)
+    max_sector_hard_cap = SECTOR_DIVERSITY_CONSTRAINTS.get("max_sector_hard_cap", 20)
+    max_cyclical = SECTOR_DIVERSITY_CONSTRAINTS.get("max_cyclical_total", 4)
 
     # Calculate dynamic max per sector based on tier size
     max_for_sector = min(int(tier_size * max_sector_pct), max_sector_hard_cap)
@@ -2309,12 +2728,16 @@ def enforce_sector_diversity(candidates: List[str], df: pd.DataFrame, tier_size:
             break
 
         # Get sector for this stock
-        stock_row = df[df['Ticker'] == ticker]
+        stock_row = df[df["Ticker"] == ticker]
         if stock_row.empty:
             continue
 
-        sector = stock_row['Sector'].iloc[0]
-        is_cyclical = sector in CYCLICAL_SECTORS or ticker in CRYPTO_TICKERS or ticker in CYCLICAL_CONSUMER
+        sector = stock_row["Sector"].iloc[0]
+        is_cyclical = (
+            sector in CYCLICAL_SECTORS
+            or ticker in CRYPTO_TICKERS
+            or ticker in CYCLICAL_CONSUMER
+        )
 
         # Check sector limit (soft cap)
         current_sector_count = sector_counts.get(sector, 0)
@@ -2356,40 +2779,51 @@ def print_sector_composition(tier_stocks: List[str], df: pd.DataFrame, tier_name
         return
 
     # Get sector data
-    tier_df = df[df['Ticker'].isin(tier_stocks)][['Ticker', 'Sector', 'Quality_Score']]
-    sector_groups = tier_df.groupby('Sector')['Ticker'].apply(list).to_dict()
+    tier_df = df[df["Ticker"].isin(tier_stocks)][["Ticker", "Sector", "Quality_Score"]]
+    sector_groups = tier_df.groupby("Sector")["Ticker"].apply(list).to_dict()
 
     # Print breakdown
     total_stocks = len(tier_stocks)
     for sector, tickers in sorted(sector_groups.items(), key=lambda x: -len(x[1])):
         pct = len(tickers) / total_stocks * 100
-        ticker_str = ', '.join(tickers[:3])
+        ticker_str = ", ".join(tickers[:3])
         if len(tickers) > 3:
-            ticker_str += f" +{len(tickers)-3} more"
+            ticker_str += f" +{len(tickers) - 3} more"
         print(f"    {sector}: {len(tickers)} ({pct:.0f}%) - {ticker_str}")
 
     # Diversity checks (Option B Compromise - soft caps)
-    max_sector_pct = SECTOR_DIVERSITY_CONSTRAINTS.get('max_sector_pct', 0.35)
-    max_sector_hard_cap = SECTOR_DIVERSITY_CONSTRAINTS.get('max_sector_hard_cap', 20)
-    min_per_sector = SECTOR_DIVERSITY_CONSTRAINTS.get('min_per_sector', 3)
-    min_sectors = SECTOR_DIVERSITY_CONSTRAINTS.get('min_sectors', 6)
-    max_cyclical = SECTOR_DIVERSITY_CONSTRAINTS.get('max_cyclical_total', 4)
+    max_sector_pct = SECTOR_DIVERSITY_CONSTRAINTS.get("max_sector_pct", 0.35)
+    max_sector_hard_cap = SECTOR_DIVERSITY_CONSTRAINTS.get("max_sector_hard_cap", 20)
+    min_per_sector = SECTOR_DIVERSITY_CONSTRAINTS.get("min_per_sector", 3)
+    min_sectors = SECTOR_DIVERSITY_CONSTRAINTS.get("min_sectors", 6)
+    max_cyclical = SECTOR_DIVERSITY_CONSTRAINTS.get("max_cyclical_total", 4)
 
     actual_max = max(len(t) for t in sector_groups.values()) if sector_groups else 0
     actual_min = min(len(t) for t in sector_groups.values()) if sector_groups else 0
     actual_max_pct = (actual_max / total_stocks) * 100 if total_stocks > 0 else 0
     actual_sectors = len(sector_groups)
-    cyclical_tickers = tier_df[tier_df['Sector'].isin(CYCLICAL_SECTORS)]['Ticker'].tolist()
+    cyclical_tickers = tier_df[tier_df["Sector"].isin(CYCLICAL_SECTORS)][
+        "Ticker"
+    ].tolist()
     actual_cyclical = len(cyclical_tickers)
 
     # Calculate max allowed based on soft cap
     max_allowed = min(int(total_stocks * max_sector_pct), max_sector_hard_cap)
 
-    print(f"\n  DIVERSITY CHECKS (Option B Soft Caps):")
-    print(f"    {'[OK]' if actual_max_pct <= max_sector_pct * 100 else '[WARN]'} Max sector %: {actual_max_pct:.1f}%/{max_sector_pct*100:.0f}% ({actual_max}/{max_allowed} stocks)")
-    print(f"    {'[OK]' if actual_min >= min_per_sector else '[WARN]'} Min per sector: {actual_min}/{min_per_sector}")
-    print(f"    {'[OK]' if actual_sectors >= min_sectors else '[WARN]'} Min sectors: {actual_sectors}/{min_sectors}")
-    print(f"    {'[OK]' if actual_cyclical <= max_cyclical else '[WARN]'} Cyclicals: {actual_cyclical}/{max_cyclical}", end="")
+    print("\n  DIVERSITY CHECKS (Option B Soft Caps):")
+    print(
+        f"    {'[OK]' if actual_max_pct <= max_sector_pct * 100 else '[WARN]'} Max sector %: {actual_max_pct:.1f}%/{max_sector_pct * 100:.0f}% ({actual_max}/{max_allowed} stocks)"
+    )
+    print(
+        f"    {'[OK]' if actual_min >= min_per_sector else '[WARN]'} Min per sector: {actual_min}/{min_per_sector}"
+    )
+    print(
+        f"    {'[OK]' if actual_sectors >= min_sectors else '[WARN]'} Min sectors: {actual_sectors}/{min_sectors}"
+    )
+    print(
+        f"    {'[OK]' if actual_cyclical <= max_cyclical else '[WARN]'} Cyclicals: {actual_cyclical}/{max_cyclical}",
+        end="",
+    )
     if cyclical_tickers:
         print(f" ({', '.join(cyclical_tickers)})")
     else:
@@ -2416,10 +2850,10 @@ def calculate_advanced_scoring_bonus(df: pd.DataFrame) -> pd.DataFrame:
     print("\n[Step 3.5/7] Calculating advanced scoring bonuses...")
 
     df = df.copy()
-    df['Advanced_Bonus'] = 0.0
+    df["Advanced_Bonus"] = 0.0
 
     # Only process stocks with advanced data
-    has_data = df['Altman_Z'].notna()
+    has_data = df["Altman_Z"].notna()
 
     if has_data.sum() == 0:
         print("  No stocks with advanced data, skipping bonuses")
@@ -2429,34 +2863,36 @@ def calculate_advanced_scoring_bonus(df: pd.DataFrame) -> pd.DataFrame:
         bonus = 0
 
         # Financial health bonus
-        z_score = df.loc[idx, 'Altman_Z']
-        piotroski = df.loc[idx, 'Piotroski']
+        z_score = df.loc[idx, "Altman_Z"]
+        piotroski = df.loc[idx, "Piotroski"]
         if z_score is not None and piotroski is not None:
             if z_score > 3.0 and piotroski >= 7:
-                bonus += ADVANCED_SCORING_WEIGHTS['financial_health_bonus']
+                bonus += ADVANCED_SCORING_WEIGHTS["financial_health_bonus"]
 
         # NOTE: Insider trading bonuses/penalties skipped (FMP Starter plan limitation)
         # NOTE: Institutional ownership bonuses/penalties skipped (FMP Starter plan limitation)
 
         # Analyst rating bonuses (available on Starter plan)
-        buy_pct = df.loc[idx, 'Analyst_Buy_Pct']
+        buy_pct = df.loc[idx, "Analyst_Buy_Pct"]
         if buy_pct is not None:
             if buy_pct > 80:
-                bonus += ADVANCED_SCORING_WEIGHTS['elite_analyst_buy_bonus']
+                bonus += ADVANCED_SCORING_WEIGHTS["elite_analyst_buy_bonus"]
             elif buy_pct > 70:
-                bonus += ADVANCED_SCORING_WEIGHTS['strong_analyst_buy_bonus']
+                bonus += ADVANCED_SCORING_WEIGHTS["strong_analyst_buy_bonus"]
 
-        df.loc[idx, 'Advanced_Bonus'] = bonus
+        df.loc[idx, "Advanced_Bonus"] = bonus
 
     # Add bonus to Quality_Score
-    df['Quality_Score'] = df['Quality_Score'] + df['Advanced_Bonus']
+    df["Quality_Score"] = df["Quality_Score"] + df["Advanced_Bonus"]
 
     # Summary statistics
-    bonus_stats = df[has_data]['Advanced_Bonus'].describe()
-    print(f"  Bonus distribution: min={bonus_stats['min']:.0f}, max={bonus_stats['max']:.0f}, mean={bonus_stats['mean']:.1f}")
+    bonus_stats = df[has_data]["Advanced_Bonus"].describe()
+    print(
+        f"  Bonus distribution: min={bonus_stats['min']:.0f}, max={bonus_stats['max']:.0f}, mean={bonus_stats['mean']:.1f}"
+    )
 
-    positive_bonus = (df['Advanced_Bonus'] > 0).sum()
-    neutral = (df['Advanced_Bonus'] == 0).sum()
+    positive_bonus = (df["Advanced_Bonus"] > 0).sum()
+    neutral = (df["Advanced_Bonus"] == 0).sum()
     print(f"  Stocks with positive bonus: {positive_bonus}")
     print(f"  Stocks with neutral bonus: {neutral}")
 
@@ -2466,6 +2902,7 @@ def calculate_advanced_scoring_bonus(df: pd.DataFrame) -> pd.DataFrame:
 # =============================================================================
 # SINGLE UNIVERSE ASSIGNMENT (Replaces Tier-Based Assignment)
 # =============================================================================
+
 
 def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
     """
@@ -2486,10 +2923,12 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
     Returns:
         List of selected ticker symbols
     """
-    print(f"\n[Step 4/7] Building universe with SOFT sector caps (target: {limit} stocks)...")
+    print(
+        f"\n[Step 4/7] Building universe with SOFT sector caps (target: {limit} stocks)..."
+    )
 
     # Sort all stocks by quality score (descending)
-    candidates = df.sort_values('Quality_Score', ascending=False)['Ticker'].tolist()
+    candidates = df.sort_values("Quality_Score", ascending=False)["Ticker"].tolist()
 
     print(f"  Total candidates: {len(candidates)} stocks")
     print(f"  Price range: ${df['Price'].min():.0f} - ${df['Price'].max():.0f}")
@@ -2498,113 +2937,165 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
     for ticker in DEBUG_TICKERS:
         if ticker in candidates:
             rank = candidates.index(ticker) + 1
-            row = df[df['Ticker'] == ticker].iloc[0]
-            log_debug_ticker("Stage 5: Universe Selection START", ticker, "CANDIDATE",
-                           f"Ranked #{rank} of {len(candidates)} by Quality_Score",
-                           {
-                               'Score': f"{row.get('Quality_Score', 0):.1f}",
-                               'Sector': row.get('Sector', 'N/A'),
-                               'Price': f"${row.get('Price', 0):.2f}",
-                           })
+            row = df[df["Ticker"] == ticker].iloc[0]
+            log_debug_ticker(
+                "Stage 5: Universe Selection START",
+                ticker,
+                "CANDIDATE",
+                f"Ranked #{rank} of {len(candidates)} by Quality_Score",
+                {
+                    "Score": f"{row.get('Quality_Score', 0):.1f}",
+                    "Sector": row.get("Sector", "N/A"),
+                    "Price": f"${row.get('Price', 0):.2f}",
+                },
+            )
         else:
-            log_debug_ticker("Stage 5: Universe Selection START", ticker, "MISSING",
-                           "NOT in candidate pool (filtered out in earlier stages)")
+            log_debug_ticker(
+                "Stage 5: Universe Selection START",
+                ticker,
+                "MISSING",
+                "NOT in candidate pool (filtered out in earlier stages)",
+            )
 
     # === DEBUG: Track blue-chip positions in candidate pool ===
-    BLUE_CHIP_TICKERS = ['KO', 'PG', 'WMT', 'JNJ', 'PFE', 'CVS', 'JPM', 'WFC', 'BAC', 'USB',
-                        'MSFT', 'AAPL', 'GOOGL', 'V', 'MA', 'UNH', 'MRK', 'ABBV']
-    print(f"\n  === DEBUG: Blue-chip positions in candidate pool (by Quality_Score) ===")
+    BLUE_CHIP_TICKERS = [
+        "KO",
+        "PG",
+        "WMT",
+        "JNJ",
+        "PFE",
+        "CVS",
+        "JPM",
+        "WFC",
+        "BAC",
+        "USB",
+        "MSFT",
+        "AAPL",
+        "GOOGL",
+        "V",
+        "MA",
+        "UNH",
+        "MRK",
+        "ABBV",
+    ]
+    print("\n  === DEBUG: Blue-chip positions in candidate pool (by Quality_Score) ===")
     for bc in BLUE_CHIP_TICKERS:
         if bc in candidates:
             pos = candidates.index(bc) + 1
-            score = df[df['Ticker'] == bc]['Quality_Score'].iloc[0]
-            sector = df[df['Ticker'] == bc]['Sector'].iloc[0]
+            score = df[df["Ticker"] == bc]["Quality_Score"].iloc[0]
+            sector = df[df["Ticker"] == bc]["Sector"].iloc[0]
             print(f"    #{pos:3d}: {bc:5s} (Score: {score:5.1f}, Sector: {sector})")
         else:
             print(f"    [X] {bc} - NOT in candidate pool (filtered out earlier)")
 
     # === DEBUG: Show top 35 candidates ===
-    print(f"\n  === DEBUG: Top 35 candidates by Quality_Score ===")
+    print("\n  === DEBUG: Top 35 candidates by Quality_Score ===")
     for i, ticker in enumerate(candidates[:35], 1):
-        row = df[df['Ticker'] == ticker].iloc[0]
-        score = row['Quality_Score']
-        sector = row['Sector']
-        is_cyclical = sector in CYCLICAL_SECTORS or ticker in CRYPTO_TICKERS or ticker in CYCLICAL_CONSUMER
+        row = df[df["Ticker"] == ticker].iloc[0]
+        score = row["Quality_Score"]
+        sector = row["Sector"]
+        is_cyclical = (
+            sector in CYCLICAL_SECTORS
+            or ticker in CRYPTO_TICKERS
+            or ticker in CYCLICAL_CONSUMER
+        )
         cyc_flag = " [CYCLICAL]" if is_cyclical else ""
         print(f"    #{i:2d}: {ticker:5s} Score={score:5.1f} Sector={sector}{cyc_flag}")
 
     # Extract constraints (Option B Compromise - soft caps)
-    min_per_sector = SECTOR_DIVERSITY_CONSTRAINTS.get('min_per_sector', 3)
-    max_sector_pct = SECTOR_DIVERSITY_CONSTRAINTS.get('max_sector_pct', 0.35)
-    min_sectors = SECTOR_DIVERSITY_CONSTRAINTS.get('min_sectors', 6)
-    max_cyclical = SECTOR_DIVERSITY_CONSTRAINTS.get('max_cyclical_total', 4)
-    max_sector_hard_cap = SECTOR_DIVERSITY_CONSTRAINTS.get('max_sector_hard_cap', 20)
+    min_per_sector = SECTOR_DIVERSITY_CONSTRAINTS.get("min_per_sector", 3)
+    max_sector_pct = SECTOR_DIVERSITY_CONSTRAINTS.get("max_sector_pct", 0.35)
+    min_sectors = SECTOR_DIVERSITY_CONSTRAINTS.get("min_sectors", 6)
+    max_cyclical = SECTOR_DIVERSITY_CONSTRAINTS.get("max_cyclical_total", 4)
+    max_sector_hard_cap = SECTOR_DIVERSITY_CONSTRAINTS.get("max_sector_hard_cap", 20)
 
     selected = []
     sector_counts = {}
     cyclical_count = 0
     MIN_QUALITY_THRESHOLD = MIN_QUALITY_FLOOR  # Use global quality floor (48)
 
-    print(f"\n  Constraints (Option B Compromise):")
+    print("\n  Constraints (Option B Compromise):")
     print(f"    - Min {min_per_sector} stocks per sector")
-    print(f"    - Max {max_sector_pct*100:.0f}% of universe per sector (~{int(limit * max_sector_pct)} stocks)")
+    print(
+        f"    - Max {max_sector_pct * 100:.0f}% of universe per sector (~{int(limit * max_sector_pct)} stocks)"
+    )
     print(f"    - Min {min_sectors} sectors required")
     print(f"    - Max {max_cyclical} cyclicals (Energy + Basic Materials)")
     print(f"    - Hard cap: {max_sector_hard_cap} stocks per sector")
 
     # === DEBUG: Track rejections ===
     rejections = {
-        'quality_threshold': [],
-        'sector_limit': [],
-        'cyclical_limit': [],
+        "quality_threshold": [],
+        "sector_limit": [],
+        "cyclical_limit": [],
     }
 
-    print(f"\n  === Phase 1: Quality-ranked selection with soft caps ===")
+    print("\n  === Phase 1: Quality-ranked selection with soft caps ===")
 
     for ticker in candidates:
         if len(selected) >= limit:
             break
 
-        stock_row = df[df['Ticker'] == ticker]
+        stock_row = df[df["Ticker"] == ticker]
         if stock_row.empty:
             continue
 
-        quality_score = stock_row['Quality_Score'].iloc[0]
-        sector = stock_row['Sector'].iloc[0]
-        is_cyclical = sector in CYCLICAL_SECTORS or ticker in CRYPTO_TICKERS or ticker in CYCLICAL_CONSUMER
+        quality_score = stock_row["Quality_Score"].iloc[0]
+        sector = stock_row["Sector"].iloc[0]
+        is_cyclical = (
+            sector in CYCLICAL_SECTORS
+            or ticker in CRYPTO_TICKERS
+            or ticker in CYCLICAL_CONSUMER
+        )
 
         # Check minimum quality threshold
         if quality_score < MIN_QUALITY_THRESHOLD:
-            rejections['quality_threshold'].append((ticker, quality_score, sector))
+            rejections["quality_threshold"].append((ticker, quality_score, sector))
             # DEBUG: Track if debug ticker rejected for quality
             if ticker in DEBUG_TICKERS:
-                log_debug_ticker("Stage 5: Selection Loop", ticker, "REJECTED",
-                               f"Quality Score {quality_score:.1f} < {MIN_QUALITY_THRESHOLD} threshold")
+                log_debug_ticker(
+                    "Stage 5: Selection Loop",
+                    ticker,
+                    "REJECTED",
+                    f"Quality Score {quality_score:.1f} < {MIN_QUALITY_THRESHOLD} threshold",
+                )
             continue
 
         current_sector_count = sector_counts.get(sector, 0)
         # Calculate dynamic sector max based on universe composition (Option B soft caps)
         max_for_sector = min(
-            int(limit * max_sector_pct),  # 35% of target (e.g., 21 stocks for 60-stock universe)
-            max_sector_hard_cap           # Absolute cap (20 stocks)
+            int(
+                limit * max_sector_pct
+            ),  # 35% of target (e.g., 21 stocks for 60-stock universe)
+            max_sector_hard_cap,  # Absolute cap (20 stocks)
         )
 
         # Check sector limits
         if current_sector_count >= max_for_sector:
-            rejections['sector_limit'].append((ticker, quality_score, sector, current_sector_count))
+            rejections["sector_limit"].append(
+                (ticker, quality_score, sector, current_sector_count)
+            )
             # DEBUG: Track if debug ticker rejected for sector limit
             if ticker in DEBUG_TICKERS:
-                log_debug_ticker("Stage 5: Selection Loop", ticker, "REJECTED",
-                               f"Sector limit reached: {sector} already has {current_sector_count}/{max_for_sector} stocks")
+                log_debug_ticker(
+                    "Stage 5: Selection Loop",
+                    ticker,
+                    "REJECTED",
+                    f"Sector limit reached: {sector} already has {current_sector_count}/{max_for_sector} stocks",
+                )
             continue
 
         # Check cyclical limit
         if is_cyclical and cyclical_count >= max_cyclical:
-            rejections['cyclical_limit'].append((ticker, quality_score, sector))
+            rejections["cyclical_limit"].append((ticker, quality_score, sector))
             # DEBUG: Track if debug ticker rejected for cyclical limit
             if ticker in DEBUG_TICKERS:
-                log_debug_ticker("Stage 5: Selection Loop", ticker, "REJECTED",
-                               f"Cyclical limit reached: already have {cyclical_count}/{max_cyclical} cyclicals")
+                log_debug_ticker(
+                    "Stage 5: Selection Loop",
+                    ticker,
+                    "REJECTED",
+                    f"Cyclical limit reached: already have {cyclical_count}/{max_cyclical} cyclicals",
+                )
             continue
 
         selected.append(ticker)
@@ -2614,37 +3105,51 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
 
         # DEBUG: Track if debug ticker selected
         if ticker in DEBUG_TICKERS:
-            log_debug_ticker("Stage 5: Selection Loop", ticker, "INCLUDED",
-                           f"Selected as #{len(selected)} (Sector: {sector}, Score: {quality_score:.1f})")
+            log_debug_ticker(
+                "Stage 5: Selection Loop",
+                ticker,
+                "INCLUDED",
+                f"Selected as #{len(selected)} (Sector: {sector}, Score: {quality_score:.1f})",
+            )
 
     # === DEBUG: Print rejection summary ===
-    print(f"\n  === DEBUG: Rejection Summary ===")
+    print("\n  === DEBUG: Rejection Summary ===")
     print(f"    Selected in main loop: {len(selected)} stocks")
-    print(f"    Rejected for quality < {MIN_QUALITY_THRESHOLD}: {len(rejections['quality_threshold'])}")
+    print(
+        f"    Rejected for quality < {MIN_QUALITY_THRESHOLD}: {len(rejections['quality_threshold'])}"
+    )
     print(f"    Rejected for sector limit: {len(rejections['sector_limit'])}")
     print(f"    Rejected for cyclical limit: {len(rejections['cyclical_limit'])}")
 
     # Show sector limit rejections (these are likely the cause of 18 stocks)
-    if rejections['sector_limit']:
-        print(f"\n  === DEBUG: Stocks rejected due to SECTOR LIMIT (first 20) ===")
-        for ticker, score, sector, count in rejections['sector_limit'][:20]:
-            print(f"    {ticker:5s} Score={score:5.1f} Sector={sector} (already had {count}/{max_for_sector})")
+    if rejections["sector_limit"]:
+        print("\n  === DEBUG: Stocks rejected due to SECTOR LIMIT (first 20) ===")
+        for ticker, score, sector, count in rejections["sector_limit"][:20]:
+            print(
+                f"    {ticker:5s} Score={score:5.1f} Sector={sector} (already had {count}/{max_for_sector})"
+            )
 
     # Show cyclical rejections
-    if rejections['cyclical_limit']:
-        print(f"\n  === DEBUG: Stocks rejected due to CYCLICAL LIMIT ===")
-        for ticker, score, sector in rejections['cyclical_limit'][:10]:
+    if rejections["cyclical_limit"]:
+        print("\n  === DEBUG: Stocks rejected due to CYCLICAL LIMIT ===")
+        for ticker, score, sector in rejections["cyclical_limit"][:10]:
             print(f"    {ticker:5s} Score={score:5.1f} Sector={sector}")
 
     # Show quality rejections if any blue-chips are there
-    blue_chip_quality_rejects = [(t, s, sec) for t, s, sec in rejections['quality_threshold'] if t in BLUE_CHIP_TICKERS]
+    blue_chip_quality_rejects = [
+        (t, s, sec)
+        for t, s, sec in rejections["quality_threshold"]
+        if t in BLUE_CHIP_TICKERS
+    ]
     if blue_chip_quality_rejects:
-        print(f"\n  === DEBUG: BLUE-CHIPS rejected for quality ===")
+        print("\n  === DEBUG: BLUE-CHIPS rejected for quality ===")
         for ticker, score, sector in blue_chip_quality_rejects:
-            print(f"    {ticker:5s} Score={score:5.1f} Sector={sector} (below {MIN_QUALITY_THRESHOLD})")
+            print(
+                f"    {ticker:5s} Score={score:5.1f} Sector={sector} (below {MIN_QUALITY_THRESHOLD})"
+            )
 
     # Enforce required sector minimums
-    required = SECTOR_DIVERSITY_CONSTRAINTS.get('required_minimum', {})
+    required = SECTOR_DIVERSITY_CONSTRAINTS.get("required_minimum", {})
     if required:
         print("\n  Enforcing required sector minimums...")
         for req_sector, min_count in required.items():
@@ -2656,17 +3161,23 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
                 # Find best candidates from required sector not yet selected (with quality threshold)
                 # For Financial Services, exclude crypto tickers (they count as cyclical, not real financials)
                 base_filter = (
-                    (df['Sector'] == req_sector) &
-                    (~df['Ticker'].isin(selected)) &
-                    (df['Quality_Score'] >= MIN_QUALITY_THRESHOLD)
+                    (df["Sector"] == req_sector)
+                    & (~df["Ticker"].isin(selected))
+                    & (df["Quality_Score"] >= MIN_QUALITY_THRESHOLD)
                 )
-                if req_sector == 'Financial Services':
-                    base_filter = base_filter & (~df['Ticker'].isin(CRYPTO_TICKERS))
+                if req_sector == "Financial Services":
+                    base_filter = base_filter & (~df["Ticker"].isin(CRYPTO_TICKERS))
 
-                sector_candidates = df[base_filter].nlargest(shortage, 'Quality_Score')['Ticker'].tolist()
+                sector_candidates = (
+                    df[base_filter]
+                    .nlargest(shortage, "Quality_Score")["Ticker"]
+                    .tolist()
+                )
 
                 if len(sector_candidates) == 0:
-                    print(f"      [WARN] No quality candidates (score >= {MIN_QUALITY_THRESHOLD}) for {req_sector}")
+                    print(
+                        f"      [WARN] No quality candidates (score >= {MIN_QUALITY_THRESHOLD}) for {req_sector}"
+                    )
                     continue
 
                 # Add or swap to meet requirement
@@ -2674,16 +3185,21 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
                     if len(selected) >= limit:
                         # Need to swap - find lowest score from non-required sector
                         swap_candidates = [
-                            t for t in selected
-                            if df[df['Ticker'] == t]['Sector'].iloc[0] not in required
+                            t
+                            for t in selected
+                            if df[df["Ticker"] == t]["Sector"].iloc[0] not in required
                         ]
                         if swap_candidates:
-                            scores = {t: df[df['Ticker'] == t]['Quality_Score'].iloc[0]
-                                      for t in swap_candidates}
+                            scores = {
+                                t: df[df["Ticker"] == t]["Quality_Score"].iloc[0]
+                                for t in swap_candidates
+                            }
                             to_remove = min(scores, key=scores.get)
-                            old_sector = df[df['Ticker'] == to_remove]['Sector'].iloc[0]
+                            old_sector = df[df["Ticker"] == to_remove]["Sector"].iloc[0]
 
-                            print(f"      Swap: {to_remove} ({old_sector}) -> {new_ticker}")
+                            print(
+                                f"      Swap: {to_remove} ({old_sector}) -> {new_ticker}"
+                            )
                             selected.remove(to_remove)
                             sector_counts[old_sector] -= 1
 
@@ -2693,7 +3209,7 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
     # Phase 2.5: Ensure minimum representation for ALL sectors (Option B Compromise)
     print(f"\n  === Phase 2.5: Ensuring minimum {min_per_sector} stocks per sector ===")
 
-    all_sectors = df['Sector'].unique()
+    all_sectors = df["Sector"].unique()
     sectors_enhanced = []
 
     for sector in all_sectors:
@@ -2704,11 +3220,15 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
             print(f"    {sector}: {current}/{min_per_sector} - adding {shortage} more")
 
             # Find best unselected candidates from this sector
-            sector_candidates = df[
-                (df['Sector'] == sector) &
-                (~df['Ticker'].isin(selected)) &
-                (df['Quality_Score'] >= MIN_QUALITY_THRESHOLD)
-            ].nlargest(shortage, 'Quality_Score')['Ticker'].tolist()
+            sector_candidates = (
+                df[
+                    (df["Sector"] == sector)
+                    & (~df["Ticker"].isin(selected))
+                    & (df["Quality_Score"] >= MIN_QUALITY_THRESHOLD)
+                ]
+                .nlargest(shortage, "Quality_Score")["Ticker"]
+                .tolist()
+            )
 
             if not sector_candidates:
                 print(f"      [WARN] No quality candidates available for {sector}")
@@ -2739,24 +3259,32 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
     active_sectors = len([s for s, c in sector_counts.items() if c > 0])
     if active_sectors < min_sectors:
         print(f"\n  [WARN] Only {active_sectors} sectors present, need {min_sectors}")
-        print(f"         Consider lowering quality threshold or adjusting sector requirements")
+        print(
+            "         Consider lowering quality threshold or adjusting sector requirements"
+        )
     else:
         print(f"\n  [OK] {active_sectors} sectors present (min {min_sectors} required)")
 
     # Fallback if still under target size (respect all constraints including quality)
     if len(selected) < limit:
         shortage = limit - len(selected)
-        print(f"\n  [WARN] Only {len(selected)}/{limit} stocks - adding up to {shortage} more")
+        print(
+            f"\n  [WARN] Only {len(selected)}/{limit} stocks - adding up to {shortage} more"
+        )
 
         remaining = [t for t in candidates if t not in selected]
         for ticker in remaining:
             if len(selected) >= limit:
                 break
-            stock_row = df[df['Ticker'] == ticker]
+            stock_row = df[df["Ticker"] == ticker]
             if not stock_row.empty:
-                quality_score = stock_row['Quality_Score'].iloc[0]
-                sector = stock_row['Sector'].iloc[0]
-                is_cyclical = sector in CYCLICAL_SECTORS or ticker in CRYPTO_TICKERS or ticker in CYCLICAL_CONSUMER
+                quality_score = stock_row["Quality_Score"].iloc[0]
+                sector = stock_row["Sector"].iloc[0]
+                is_cyclical = (
+                    sector in CYCLICAL_SECTORS
+                    or ticker in CRYPTO_TICKERS
+                    or ticker in CYCLICAL_CONSUMER
+                )
                 current_sector_count = sector_counts.get(sector, 0)
 
                 # Skip if below quality threshold
@@ -2779,7 +3307,7 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
 
     # Remove duplicate share classes (keep higher volume/primary ticker)
     SHARE_CLASS_DUPLICATES = {
-        'GOOGL': 'GOOG',  # Keep GOOGL (Class A), remove GOOG (Class C)
+        "GOOGL": "GOOG",  # Keep GOOGL (Class A), remove GOOG (Class C)
         # Add others if needed: 'BRK.B': 'BRK.A', etc.
     }
 
@@ -2787,20 +3315,22 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
         if primary in selected and duplicate in selected:
             selected.remove(duplicate)
             # Update sector count
-            dup_sector = df[df['Ticker'] == duplicate]['Sector'].iloc[0]
+            dup_sector = df[df["Ticker"] == duplicate]["Sector"].iloc[0]
             sector_counts[dup_sector] = sector_counts.get(dup_sector, 1) - 1
             print(f"\n  Removed duplicate: {duplicate} (keeping {primary})")
 
     # Calculate statistics for selected universe
-    universe_df = df[df['Ticker'].isin(selected)]
-    avg_score = universe_df['Quality_Score'].mean()
-    min_price = universe_df['Price'].min()
-    max_price = universe_df['Price'].max()
-    median_price = universe_df['Price'].median()
+    universe_df = df[df["Ticker"].isin(selected)]
+    avg_score = universe_df["Quality_Score"].mean()
+    min_price = universe_df["Price"].min()
+    max_price = universe_df["Price"].max()
+    median_price = universe_df["Price"].median()
 
     print(f"\n  WHEEL_UNIVERSE: {len(selected)} stocks")
     print(f"  Average Quality Score: {avg_score:.1f}")
-    print(f"  Price range: ${min_price:.0f} - ${max_price:.0f} (median: ${median_price:.0f})")
+    print(
+        f"  Price range: ${min_price:.0f} - ${max_price:.0f} (median: ${median_price:.0f})"
+    )
 
     # Print sector composition
     print_sector_composition(selected, df, "WHEEL_UNIVERSE")
@@ -2812,38 +3342,54 @@ def assign_single_universe(df: pd.DataFrame, limit: int = 60) -> List[str]:
         (50, 100, "$50-100"),
         (100, 150, "$100-150"),
         (150, 300, "$150-300"),
-        (300, float('inf'), "$300+")
+        (300, float("inf"), "$300+"),
     ]
 
     for min_p, max_p, label in price_brackets:
-        bracket_df = universe_df[(universe_df['Price'] >= min_p) & (universe_df['Price'] < max_p)]
+        bracket_df = universe_df[
+            (universe_df["Price"] >= min_p) & (universe_df["Price"] < max_p)
+        ]
         count = len(bracket_df)
         if count > 0:
-            tickers = bracket_df['Ticker'].tolist()
+            tickers = bracket_df["Ticker"].tolist()
             capital_range = f"${int(min_p * 100):,} - ${int(min(max_p, 300) * 100):,}"
-            print(f"    {label}: {count} stocks ({capital_range}) - {', '.join(tickers[:5])}")
+            print(
+                f"    {label}: {count} stocks ({capital_range}) - {', '.join(tickers[:5])}"
+            )
 
     # DEBUG: Final status for debug tickers
     for ticker in DEBUG_TICKERS:
         if ticker in selected:
-            row = df[df['Ticker'] == ticker].iloc[0]
-            log_debug_ticker("Stage 5: Universe Selection END", ticker, "INCLUDED",
-                           f"IN FINAL UNIVERSE ({len(selected)} stocks)",
-                           {
-                               'Score': f"{row.get('Quality_Score', 0):.1f}",
-                               'Sector': row.get('Sector', 'N/A'),
-                           })
+            row = df[df["Ticker"] == ticker].iloc[0]
+            log_debug_ticker(
+                "Stage 5: Universe Selection END",
+                ticker,
+                "INCLUDED",
+                f"IN FINAL UNIVERSE ({len(selected)} stocks)",
+                {
+                    "Score": f"{row.get('Quality_Score', 0):.1f}",
+                    "Sector": row.get("Sector", "N/A"),
+                },
+            )
         elif ticker in candidates:
-            row = df[df['Ticker'] == ticker].iloc[0]
-            log_debug_ticker("Stage 5: Universe Selection END", ticker, "EXCLUDED",
-                           f"NOT in final universe (was candidate, check rejection reason above)",
-                           {
-                               'Score': f"{row.get('Quality_Score', 0):.1f}",
-                               'Sector': row.get('Sector', 'N/A'),
-                           })
+            row = df[df["Ticker"] == ticker].iloc[0]
+            log_debug_ticker(
+                "Stage 5: Universe Selection END",
+                ticker,
+                "EXCLUDED",
+                "NOT in final universe (was candidate, check rejection reason above)",
+                {
+                    "Score": f"{row.get('Quality_Score', 0):.1f}",
+                    "Sector": row.get("Sector", "N/A"),
+                },
+            )
         else:
-            log_debug_ticker("Stage 5: Universe Selection END", ticker, "EXCLUDED",
-                           "NOT in candidate pool (filtered in earlier stage)")
+            log_debug_ticker(
+                "Stage 5: Universe Selection END",
+                ticker,
+                "EXCLUDED",
+                "NOT in candidate pool (filtered in earlier stage)",
+            )
 
     return selected
 
@@ -2869,75 +3415,93 @@ def validate_single_universe(universe: List[str], df: pd.DataFrame) -> bool:
     print("\n[Step 5/7] Validating universe (Option B Soft Caps)...")
 
     # Extract constraints
-    max_sector_pct_limit = SECTOR_DIVERSITY_CONSTRAINTS.get('max_sector_pct', 0.35)
-    min_per_sector = SECTOR_DIVERSITY_CONSTRAINTS.get('min_per_sector', 3)
-    min_sectors = SECTOR_DIVERSITY_CONSTRAINTS.get('min_sectors', 6)
-    max_cyclical = SECTOR_DIVERSITY_CONSTRAINTS.get('max_cyclical_total', 4)
+    max_sector_pct_limit = SECTOR_DIVERSITY_CONSTRAINTS.get("max_sector_pct", 0.35)
+    min_per_sector = SECTOR_DIVERSITY_CONSTRAINTS.get("min_per_sector", 3)
+    min_sectors = SECTOR_DIVERSITY_CONSTRAINTS.get("min_sectors", 6)
+    max_cyclical = SECTOR_DIVERSITY_CONSTRAINTS.get("max_cyclical_total", 4)
 
     issues = []
 
     # Check minimum size (adjusted for Option B)
     if len(universe) < 50:
-        issues.append(f"  [WARN] Universe only has {len(universe)} stocks (target: 50+)")
+        issues.append(
+            f"  [WARN] Universe only has {len(universe)} stocks (target: 50+)"
+        )
 
     # Get universe data
-    universe_df = df[df['Ticker'].isin(universe)]
+    universe_df = df[df["Ticker"].isin(universe)]
 
     # Check sector diversity
-    sector_counts = universe_df['Sector'].value_counts()
+    sector_counts = universe_df["Sector"].value_counts()
     num_sectors = len(sector_counts)
 
     if num_sectors < min_sectors:
-        issues.append(f"  [WARN] Only {num_sectors} sectors represented (minimum: {min_sectors})")
+        issues.append(
+            f"  [WARN] Only {num_sectors} sectors represented (minimum: {min_sectors})"
+        )
 
     # Check sector concentration (percentage-based)
     if len(universe) > 0:
         max_sector_pct = sector_counts.max() / len(universe)
         if max_sector_pct > max_sector_pct_limit:
             top_sector = sector_counts.idxmax()
-            issues.append(f"  [WARN] {top_sector} is {max_sector_pct:.0%} of universe (max: {max_sector_pct_limit:.0%})")
+            issues.append(
+                f"  [WARN] {top_sector} is {max_sector_pct:.0%} of universe (max: {max_sector_pct_limit:.0%})"
+            )
 
     # Check minimum per sector
     if len(sector_counts) > 0:
         min_in_sector = sector_counts.min()
         if min_in_sector < min_per_sector:
-            sectors_below_min = [s for s, c in sector_counts.items() if c < min_per_sector]
-            issues.append(f"  [WARN] Sectors below minimum: {', '.join(sectors_below_min)} have <{min_per_sector} stocks")
+            sectors_below_min = [
+                s for s, c in sector_counts.items() if c < min_per_sector
+            ]
+            issues.append(
+                f"  [WARN] Sectors below minimum: {', '.join(sectors_below_min)} have <{min_per_sector} stocks"
+            )
 
     # Check cyclicals
-    cyclical_count = universe_df[universe_df['Sector'].isin(CYCLICAL_SECTORS)].shape[0]
+    cyclical_count = universe_df[universe_df["Sector"].isin(CYCLICAL_SECTORS)].shape[0]
     if cyclical_count > max_cyclical:
-        issues.append(f"  [WARN] {cyclical_count} cyclical stocks (max: {max_cyclical})")
+        issues.append(
+            f"  [WARN] {cyclical_count} cyclical stocks (max: {max_cyclical})"
+        )
 
     # Check bank inclusion (informational, not blocking)
-    print(f"\n  === Bank Inclusion Check ===")
-    PRIORITY_BANKS = ['JPM', 'WFC', 'BAC', 'USB']
-    available_banks = df[df['Ticker'].isin(PRIORITY_BANKS)]['Ticker'].tolist()
+    print("\n  === Bank Inclusion Check ===")
+    PRIORITY_BANKS = ["JPM", "WFC", "BAC", "USB"]
+    available_banks = df[df["Ticker"].isin(PRIORITY_BANKS)]["Ticker"].tolist()
     selected_banks = [t for t in universe if t in PRIORITY_BANKS]
 
     if available_banks:
         print(f"    Available banks in dataset: {', '.join(available_banks)}")
-        print(f"    Selected banks in universe: {', '.join(selected_banks) if selected_banks else 'None'}")
+        print(
+            f"    Selected banks in universe: {', '.join(selected_banks) if selected_banks else 'None'}"
+        )
 
         missing_banks = [b for b in available_banks if b not in selected_banks]
         if missing_banks:
-            print(f"    [WARN] Banks available but not selected: {', '.join(missing_banks)}")
-            print(f"           Check if quality floor exemption was applied correctly")
+            print(
+                f"    [WARN] Banks available but not selected: {', '.join(missing_banks)}"
+            )
+            print("           Check if quality floor exemption was applied correctly")
     else:
-        print(f"    [OK] No priority banks in dataset (filtered in earlier stages)")
+        print("    [OK] No priority banks in dataset (filtered in earlier stages)")
 
     if issues:
         print("\n".join(issues))
         try:
             response = input("\nProceed anyway? (y/n): ")
-            return response.lower() == 'y'
+            return response.lower() == "y"
         except EOFError:
             print("   Non-interactive mode: Proceeding with warnings...")
             return True
 
     print(f"  [OK] Universe size: {len(universe)} stocks")
     print(f"  [OK] Sectors: {num_sectors} (min {min_sectors})")
-    print(f"  [OK] Max sector concentration: {sector_counts.max()}/{len(universe)} ({sector_counts.max()/len(universe):.0%})")
+    print(
+        f"  [OK] Max sector concentration: {sector_counts.max()}/{len(universe)} ({sector_counts.max() / len(universe):.0%})"
+    )
     print(f"  [OK] Min per sector: {sector_counts.min()} (min {min_per_sector})")
     print(f"  [OK] Cyclicals: {cyclical_count}/{max_cyclical}")
 
@@ -2953,6 +3517,7 @@ def validate_single_universe(universe: List[str], df: pd.DataFrame) -> bool:
 # FILE MANAGEMENT FUNCTIONS
 # =============================================================================
 
+
 def read_existing_universe() -> Dict[str, str]:
     """
     Read existing universe.py and extract sections to preserve.
@@ -2961,7 +3526,7 @@ def read_existing_universe() -> Dict[str, str]:
         Dict with preserved content sections
     """
     try:
-        with open('universe.py', 'r', encoding='utf-8') as f:
+        with open("universe.py", "r", encoding="utf-8") as f:
             content = f.read()
     except FileNotFoundError:
         print("[WARN]  universe.py not found, will create from scratch")
@@ -2970,21 +3535,27 @@ def read_existing_universe() -> Dict[str, str]:
     preserved = {}
 
     # Extract EXCLUDED_TICKERS
-    start = content.find('EXCLUDED_TICKERS = [')
+    start = content.find("EXCLUDED_TICKERS = [")
     if start != -1:
-        end = content.find(']', start) + 1
-        preserved['excluded'] = content[start:end]
+        end = content.find("]", start) + 1
+        preserved["excluded"] = content[start:end]
 
     # Extract helper functions
-    functions_start = content.find('# =============================================================================\n# HELPER FUNCTIONS\n# =============================================================================')
+    functions_start = content.find(
+        "# =============================================================================\n# HELPER FUNCTIONS\n# ============================================================================="
+    )
     if functions_start != -1:
-        preserved['functions'] = content[functions_start:]
+        preserved["functions"] = content[functions_start:]
 
     return preserved
 
 
-def generate_universe_content(universe: List[str], preserved: Dict[str, str],
-                             stats: Dict[str, int], df: pd.DataFrame) -> str:
+def generate_universe_content(
+    universe: List[str],
+    preserved: Dict[str, str],
+    stats: Dict[str, int],
+    df: pd.DataFrame,
+) -> str:
     """
     Generate universe.py with single unified universe.
 
@@ -3003,57 +3574,64 @@ def generate_universe_content(universe: List[str], preserved: Dict[str, str],
     # Create lookup dict for company info with capital requirements
     company_lookup = {}
     for _, row in df.iterrows():
-        ticker = row.get('Ticker', '')
+        ticker = row.get("Ticker", "")
         if ticker:
-            price = row.get('Price', 0)
+            price = row.get("Price", 0)
             company_lookup[ticker] = {
-                'company': row.get('Company', 'Unknown Company'),
-                'sector': row.get('Sector', 'Unknown Sector'),
-                'score': row.get('Quality_Score', 0.0),
-                'price': price,
-                'capital': int(price * 100),
-                'earnings': row.get('Next_Earnings', None)
+                "company": row.get("Company", "Unknown Company"),
+                "sector": row.get("Sector", "Unknown Sector"),
+                "score": row.get("Quality_Score", 0.0),
+                "price": price,
+                "capital": int(price * 100),
+                "earnings": row.get("Next_Earnings", None),
             }
 
     # Format ticker lines with capital requirement
     def format_universe_entry(ticker):
-        info = company_lookup.get(ticker, {
-            'company': 'Unknown',
-            'sector': 'Unknown',
-            'score': 0.0,
-            'price': 0,
-            'capital': 0,
-            'earnings': None
-        })
-        company = info['company'][:30]
-        earnings_str = f" | Earnings: {info['earnings']}" if info.get('earnings') else ""
-        capital_k = info['capital'] / 1000
+        info = company_lookup.get(
+            ticker,
+            {
+                "company": "Unknown",
+                "sector": "Unknown",
+                "score": 0.0,
+                "price": 0,
+                "capital": 0,
+                "earnings": None,
+            },
+        )
+        company = info["company"][:30]
+        earnings_str = (
+            f" | Earnings: {info['earnings']}" if info.get("earnings") else ""
+        )
+        capital_k = info["capital"] / 1000
         return f'    "{ticker}",  # {company} | {info["sector"]} | ${info["price"]:.0f} | Capital: ${capital_k:.1f}K | Score: {info["score"]:.1f}{earnings_str}'
 
-    universe_entries = '\n'.join([format_universe_entry(t) for t in universe])
+    universe_entries = "\n".join([format_universe_entry(t) for t in universe])
 
     # Generate CAPITAL_REQUIREMENTS dict entries
-    capital_entries = '\n'.join([
-        f'    "{t}": {company_lookup.get(t, {}).get("capital", 0)},'
-        for t in universe
-    ])
+    capital_entries = "\n".join(
+        [f'    "{t}": {company_lookup.get(t, {}).get("capital", 0)},' for t in universe]
+    )
 
     # Generate STOCK_METADATA dict entries (company/sector/score/capital for reporting,
     # consumed by earnings_monitor.py via get_stock_metadata()).
     def format_metadata_entry(ticker):
-        info = company_lookup.get(ticker, {
-            'company': 'Unknown', 'sector': 'Unknown', 'score': 0.0, 'capital': 0
-        })
-        company = str(info['company']).replace('"', "'")
-        return (f'    "{ticker}": {{"company": "{company}", "sector": "{info["sector"]}", '
-                f'"quality_score": {info["score"]:.1f}, "capital_required": {info["capital"]}}},')
+        info = company_lookup.get(
+            ticker,
+            {"company": "Unknown", "sector": "Unknown", "score": 0.0, "capital": 0},
+        )
+        company = str(info["company"]).replace('"', "'")
+        return (
+            f'    "{ticker}": {{"company": "{company}", "sector": "{info["sector"]}", '
+            f'"quality_score": {info["score"]:.1f}, "capital_required": {info["capital"]}}},'
+        )
 
-    metadata_entries = '\n'.join([format_metadata_entry(t) for t in universe])
+    metadata_entries = "\n".join([format_metadata_entry(t) for t in universe])
 
     content = f'''"""
 Pre-defined stock universes for Options Scanner
-AUTO-GENERATED by universe_builder.py on {now.strftime('%Y-%m-%d %H:%M:%S')}
-Next scheduled refresh: {next_refresh.strftime('%Y-%m-%d')}
+AUTO-GENERATED by universe_builder.py on {now.strftime("%Y-%m-%d %H:%M:%S")}
+Next scheduled refresh: {next_refresh.strftime("%Y-%m-%d")}
 
 SINGLE UNIVERSE ARCHITECTURE
 Quality-ranked stocks across all price ranges. No artificial tier segmentation.
@@ -3084,8 +3662,8 @@ Sector diversity enforced:
 - Max 2 cyclicals (Energy + Basic Materials)
 - Min 4 sectors
 
-Stocks screened: {stats['screened']}
-Quality stocks found: {stats['passed']}
+Stocks screened: {stats["screened"]}
+Quality stocks found: {stats["passed"]}
 Final universe: {len(universe)} stocks
 """
 
@@ -3114,7 +3692,7 @@ STOCK_METADATA = {{
 # [PRESERVED FROM EXISTING FILE - DO NOT MODIFY]
 # =============================================================================
 
-{preserved.get('excluded', 'EXCLUDED_TICKERS = [\\n    # Biotech with pending FDA decisions (add as needed)\\n    # M&A targets (add as needed)\\n    # Delisting candidates (add as needed)\\n]')}
+{preserved.get("excluded", "EXCLUDED_TICKERS = [\\n    # Biotech with pending FDA decisions (add as needed)\\n    # M&A targets (add as needed)\\n    # Delisting candidates (add as needed)\\n]")}
 
 
 # =============================================================================
@@ -3208,16 +3786,16 @@ def write_universe_file(content: str, output_path: str, backup: bool = True):
         output_path: Path to write file
         backup: Whether to create backup
     """
-    if backup and output_path == 'universe.py':
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_path = f'universe.py.backup.{timestamp}'
+    if backup and output_path == "universe.py":
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = f"universe.py.backup.{timestamp}"
         try:
-            shutil.copy2('universe.py', backup_path)
+            shutil.copy2("universe.py", backup_path)
             print(f"[OK] Backup created: {backup_path}")
         except FileNotFoundError:
             print("[WARN]  No existing universe.py to backup")
 
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)
 
     print(f"[OK] {output_path} written ({len(content.splitlines())} lines)")
@@ -3245,7 +3823,7 @@ def check_minimum_results(df: pd.DataFrame):
         # Try to get user input, but continue if non-interactive
         try:
             response = input("\nContinue anyway? (y/n): ")
-            if response.lower() != 'y':
+            if response.lower() != "y":
                 print("Aborted. No changes made to universe.py")
                 exit(0)
         except EOFError:
@@ -3260,6 +3838,7 @@ def check_minimum_results(df: pd.DataFrame):
 # MAIN FUNCTION
 # =============================================================================
 
+
 def main():
     """Main execution function."""
     global logger
@@ -3269,26 +3848,26 @@ def main():
 
     # Initialize logging
     logger = setup_logging(verbose=args.verbose)
-    logger.info("="*70)
+    logger.info("=" * 70)
     logger.info("Universe Builder Starting")
-    logger.info("="*70)
+    logger.info("=" * 70)
     logger.info(f"Arguments: {vars(args)}")
 
     validation_summary = {
-        'schema_check': 'PENDING',
-        'completeness_check': 'PENDING',
-        'outlier_detection': 'PENDING',
-        'earnings_validation': 'PENDING',
-        'fcf_validation': 'PENDING',
+        "schema_check": "PENDING",
+        "completeness_check": "PENDING",
+        "outlier_detection": "PENDING",
+        "earnings_validation": "PENDING",
+        "fcf_validation": "PENDING",
     }
 
     try:
         # =====================================================================
         # DIAGNOSTIC: Run blue-chip availability test FIRST
         # =====================================================================
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("STARTING DIAGNOSTIC MODE")
-        print("="*80)
+        print("=" * 80)
 
         fetcher = create_fetcher()
         available, filtered_out, missing = test_blue_chip_availability(fetcher)
@@ -3300,7 +3879,9 @@ def main():
             print("                 Proceeding with standard screener")
         elif len(available) + len(filtered_out) >= 10:
             print("\n[RECOMMENDATION] FMP has data but filters too strict")
-            print("                 Will fetch blue-chips directly and merge with screener")
+            print(
+                "                 Will fetch blue-chips directly and merge with screener"
+            )
             use_direct_fetch = True
         else:
             print("\n[CRITICAL] FMP missing too much data")
@@ -3316,11 +3897,15 @@ def main():
 
             if not df_blue_chips.empty:
                 # Merge with screener results, avoiding duplicates
-                existing_tickers = set(df['Ticker'].values)
-                new_blue_chips = df_blue_chips[~df_blue_chips['Ticker'].isin(existing_tickers)]
+                existing_tickers = set(df["Ticker"].values)
+                new_blue_chips = df_blue_chips[
+                    ~df_blue_chips["Ticker"].isin(existing_tickers)
+                ]
 
                 if not new_blue_chips.empty:
-                    print(f"\n[MERGE] Adding {len(new_blue_chips)} blue-chip stocks not in screener")
+                    print(
+                        f"\n[MERGE] Adding {len(new_blue_chips)} blue-chip stocks not in screener"
+                    )
                     df = pd.concat([df, new_blue_chips], ignore_index=True)
                     print(f"        Total stocks after merge: {len(df)}")
 
@@ -3328,7 +3913,7 @@ def main():
 
         # VALIDATION STEP 1: Schema validation (fail loudly if finviz changed columns)
         validate_schema(df)
-        validation_summary['schema_check'] = 'PASSED'
+        validation_summary["schema_check"] = "PASSED"
 
         # Step 2: Apply post-screening filters
         df = apply_post_screening_filters(df)
@@ -3338,20 +3923,24 @@ def main():
 
         # VALIDATION STEP 2: Data completeness check (fail if >10% missing)
         validate_data_completeness(df)
-        validation_summary['completeness_check'] = 'PASSED'
+        validation_summary["completeness_check"] = "PASSED"
 
         # VALIDATION STEP 3: Outlier detection (remove finviz glitches)
         df = detect_and_remove_outliers(df)
-        validation_summary['outlier_detection'] = 'PASSED'
+        validation_summary["outlier_detection"] = "PASSED"
 
         total_passed = len(df)
 
         # NOTE: FMP already provides earnings dates in Next_Earnings column
         # No need for yfinance enrichment - skip enrich_with_next_earnings()
-        earnings_count = df['Next_Earnings'].notna().sum() if 'Next_Earnings' in df.columns else 0
+        earnings_count = (
+            df["Next_Earnings"].notna().sum() if "Next_Earnings" in df.columns else 0
+        )
         earnings_rate = earnings_count / len(df) if len(df) > 0 else 0
-        print(f"\n[VALIDATION] Earnings dates from FMP: {earnings_count}/{len(df)} ({earnings_rate:.1%})")
-        validation_summary['earnings_validation'] = 'PASSED'
+        print(
+            f"\n[VALIDATION] Earnings dates from FMP: {earnings_count}/{len(df)} ({earnings_rate:.1%})"
+        )
+        validation_summary["earnings_validation"] = "PASSED"
 
         # NOTE: FMP already provides FCF data in FCF and FCF_Margin columns
         # No need for yfinance FCF validation - skip validate_free_cash_flow()
@@ -3359,21 +3948,33 @@ def main():
         # EXEMPT Financial Services: Banks don't have traditional FCF (deposits/lending based)
         # EXEMPT Consumer Defensive: Retailers (WMT, COST) operate on thin margins by design
         #                            High volume / low margin is their business model
-        if 'FCF' in df.columns and 'FCF_Margin' in df.columns:
-            fcf_exempt_sectors = ['Financial Services', 'Consumer Defensive']
-            is_exempt = df['Sector'].isin(fcf_exempt_sectors)
+        if "FCF" in df.columns and "FCF_Margin" in df.columns:
+            fcf_exempt_sectors = ["Financial Services", "Consumer Defensive"]
+            is_exempt = df["Sector"].isin(fcf_exempt_sectors)
             # For non-exempt sectors: require FCF > 0 AND margin > 2%
-            fcf_mask = is_exempt | ((df['FCF'] > 0) & (df['FCF_Margin'] > 2.0))
+            fcf_mask = is_exempt | ((df["FCF"] > 0) & (df["FCF_Margin"] > 2.0))
             fcf_passed = fcf_mask.sum()
             fcf_exempt_count = is_exempt.sum()
             df = df[fcf_mask]
-            print(f"\n[VALIDATION] FCF validation (FCF >0 AND margin >2%): {fcf_passed}/{len(df) + (len(df) == 0)} passed ({fcf_exempt_count} exempt: Financial Services, Consumer Defensive)")
-        validation_summary['fcf_validation'] = 'PASSED'
+            print(
+                f"\n[VALIDATION] FCF validation (FCF >0 AND margin >2%): {fcf_passed}/{len(df) + (len(df) == 0)} passed ({fcf_exempt_count} exempt: Financial Services, Consumer Defensive)"
+            )
+        validation_summary["fcf_validation"] = "PASSED"
 
         check_minimum_results(df)
 
         # Add numeric market cap column for percentile calculations
-        df['Market Cap Numeric'] = df['Market Cap'].apply(lambda x: float(x.replace('B', '')) * 1000 if isinstance(x, str) and 'B' in x else (float(x.replace('M', '')) if isinstance(x, str) and 'M' in x else float(x)))
+        df["Market Cap Numeric"] = df["Market Cap"].apply(
+            lambda x: (
+                float(x.replace("B", "")) * 1000
+                if isinstance(x, str) and "B" in x
+                else (
+                    float(x.replace("M", ""))
+                    if isinstance(x, str) and "M" in x
+                    else float(x)
+                )
+            )
+        )
 
         # Step 3: Calculate quality scores using percentile ranking
         print("\n[Step 3/7] Calculating quality scores (percentile-based)...")
@@ -3420,20 +4021,22 @@ def main():
         df = apply_bank_quality_floor(df)
 
         # === DEBUG: PG-specific metric analysis ===
-        PG_DIAGNOSTIC_TICKERS = ['PG', 'KO', 'WMT', 'JNJ', 'JPM', 'WFC']
+        PG_DIAGNOSTIC_TICKERS = ["PG", "KO", "WMT", "JNJ", "JPM", "WFC"]
         print("\n  === DEBUG: Key blue-chip score breakdown ===")
         for ticker in PG_DIAGNOSTIC_TICKERS:
-            if ticker in df['Ticker'].values:
-                row = df[df['Ticker'] == ticker].iloc[0]
-                print(f"\n    {ticker} ({row.get('Sector', 'N/A')}) - Total Score: {row.get('Quality_Score', 0):.1f}")
-                print(f"      Raw Metrics:")
+            if ticker in df["Ticker"].values:
+                row = df[df["Ticker"] == ticker].iloc[0]
+                print(
+                    f"\n    {ticker} ({row.get('Sector', 'N/A')}) - Total Score: {row.get('Quality_Score', 0):.1f}"
+                )
+                print("      Raw Metrics:")
                 print(f"        Oper M: {row.get('Oper M', 'N/A')}")
                 print(f"        ROE: {row.get('ROE', 'N/A')}")
                 print(f"        Curr R: {row.get('Curr R', 'N/A')}")
                 print(f"        Debt/Eq: {row.get('Debt/Eq', 'N/A')}")
                 print(f"        Gross M: {row.get('Gross M', 'N/A')}")
                 print(f"        FCF_Margin: {row.get('FCF_Margin', 'N/A')}")
-                print(f"      Component Scores:")
+                print("      Component Scores:")
                 print(f"        OM_Score: {row.get('OM_Score', 0):.1f}/15")
                 print(f"        ROE_Score: {row.get('ROE_Score', 0):.1f}/15")
                 print(f"        CR_Score: {row.get('CR_Score', 0):.1f}/15")
@@ -3454,23 +4057,30 @@ def main():
         if len(df) >= 3:
             print("\n[DEBUG] Sample stocks with financial metrics:")
             # Use abbreviated column names that finviz actually returns
-            debug_cols = ['Ticker', 'Oper M', 'ROE', 'Curr R', 'Debt/Eq', 'Quality_Score']
+            debug_cols = [
+                "Ticker",
+                "Oper M",
+                "ROE",
+                "Curr R",
+                "Debt/Eq",
+                "Quality_Score",
+            ]
             available_cols = [col for col in debug_cols if col in df.columns]
             print(df[available_cols].head(3).to_string(index=False))
 
         # Debug: Show earnings dates if available
-        if 'Earnings Date' in df.columns:
+        if "Earnings Date" in df.columns:
             print("\n[DEBUG] Upcoming earnings:")
-            earnings_df = df[['Ticker', 'Earnings Date']].copy()
-            earnings_df = earnings_df[earnings_df['Earnings Date'].notna()]
-            earnings_df = earnings_df[earnings_df['Earnings Date'] != '-']
+            earnings_df = df[["Ticker", "Earnings Date"]].copy()
+            earnings_df = earnings_df[earnings_df["Earnings Date"].notna()]
+            earnings_df = earnings_df[earnings_df["Earnings Date"] != "-"]
             if len(earnings_df) > 0:
                 print(earnings_df.to_string(index=False))
             else:
                 print("  No earnings dates found in data")
 
         # Show score distribution with more granular bins
-        score_bins = pd.cut(df['Quality_Score'], bins=[0, 40, 50, 60, 70, 80, 90, 100])
+        score_bins = pd.cut(df["Quality_Score"], bins=[0, 40, 50, 60, 70, 80, 90, 100])
         score_counts = df.groupby(score_bins).size()
         print("\nScore distribution:")
         for bin_range, count in score_counts.items():
@@ -3482,7 +4092,7 @@ def main():
                 "60-70": "good",
                 "70-80": "very good",
                 "80-90": "excellent",
-                "90-100": "elite"
+                "90-100": "elite",
             }
             desc = desc_dict.get(label, "")
             print(f"  {label}: {count} stocks ({desc})")
@@ -3495,7 +4105,7 @@ def main():
         # Find earnings column
         earnings_col = None
         for col in df.columns:
-            if 'earn' in col.lower():
+            if "earn" in col.lower():
                 earnings_col = col
                 break
 
@@ -3504,31 +4114,37 @@ def main():
 
             # Show earnings data
             print("\n[DEBUG] Upcoming earnings:")
-            earnings_display = df[['Ticker', earnings_col]].copy()
+            earnings_display = df[["Ticker", earnings_col]].copy()
 
             # Filter to non-null, non-empty, non-dash values
             mask = (
-                earnings_display[earnings_col].notna() &
-                (earnings_display[earnings_col] != '') &
-                (earnings_display[earnings_col] != '-') &
-                (earnings_display[earnings_col].astype(str).str.lower() != 'nan')
+                earnings_display[earnings_col].notna()
+                & (earnings_display[earnings_col] != "")
+                & (earnings_display[earnings_col] != "-")
+                & (earnings_display[earnings_col].astype(str).str.lower() != "nan")
             )
             earnings_display = earnings_display[mask]
 
             if len(earnings_display) > 0:
                 print(earnings_display.to_string(index=False))
-                print(f"\nTotal stocks with earnings data: {len(earnings_display)}/{len(df)}")
+                print(
+                    f"\nTotal stocks with earnings data: {len(earnings_display)}/{len(df)}"
+                )
             else:
                 print("  [WARN]  WARNING: No valid earnings dates found!")
                 print(f"  All values in '{earnings_col}':")
-                print(df[['Ticker', earnings_col]].to_string(index=False))
+                print(df[["Ticker", earnings_col]].to_string(index=False))
         else:
             print("[ERROR] CRITICAL: No earnings column found in final dataframe!")
             print(f"Available columns: {df.columns.tolist()}")
         # ═══════════════════════════════════════════════════════════════
 
         # Step 4: Assign to single quality-focused universe
-        universe_size = args.universe_size if hasattr(args, 'universe_size') else DEFAULT_LIMITS['universe_size']
+        universe_size = (
+            args.universe_size
+            if hasattr(args, "universe_size")
+            else DEFAULT_LIMITS["universe_size"]
+        )
         universe = assign_single_universe(df, limit=universe_size)
 
         # Step 5: Validate
@@ -3539,12 +4155,16 @@ def main():
         # Step 6: Preserve existing content
         print("\n[Step 6/7] Preserving existing content...")
         preserved = read_existing_universe()
-        print(f"  [OK] EXCLUDED_TICKERS ({len(preserved.get('excluded', '').split(',')) if 'excluded' in preserved else 0} stocks)")
-        print(f"  [OK] Helper functions ({len([line for line in preserved.get('functions', '').splitlines() if line.strip().startswith('def ')]) if 'functions' in preserved else 0} functions)")
+        print(
+            f"  [OK] EXCLUDED_TICKERS ({len(preserved.get('excluded', '').split(',')) if 'excluded' in preserved else 0} stocks)"
+        )
+        print(
+            f"  [OK] Helper functions ({len([line for line in preserved.get('functions', '').splitlines() if line.strip().startswith('def ')]) if 'functions' in preserved else 0} functions)"
+        )
 
         # Step 7: Generate and write file
         print("\n[Step 7/7] Writing to universe.py...")
-        stats = {'screened': total_screened, 'passed': total_passed}
+        stats = {"screened": total_screened, "passed": total_passed}
         content = generate_universe_content(universe, preserved, stats, df)
 
         if not args.dry_run:
@@ -3560,13 +4180,13 @@ def main():
             print_debug_summary()
 
         # Log successful completion
-        logger.info("="*70)
+        logger.info("=" * 70)
         logger.info("VALIDATION SUMMARY:")
         for check, status in validation_summary.items():
             logger.info(f"  {check:25s}: {status}")
-        logger.info("="*70)
+        logger.info("=" * 70)
         logger.info("Universe Builder Completed Successfully")
-        logger.info("="*70)
+        logger.info("=" * 70)
 
     except KeyError as e:
         logger.error(f"Schema validation failed: {e}")
@@ -3582,11 +4202,11 @@ def main():
 
     except Exception as e:
         logger.error(f"Unexpected error: {e}", exc_info=True)
-        logger.error("="*70)
+        logger.error("=" * 70)
         logger.error("VALIDATION SUMMARY (FAILED):")
         for check, status in validation_summary.items():
             logger.error(f"  {check:25s}: {status}")
-        logger.error("="*70)
+        logger.error("=" * 70)
         raise
 
     finally:

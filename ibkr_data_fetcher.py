@@ -21,6 +21,7 @@ Requirements:
 """
 
 from typing import Optional, List, Dict, Any
+import logging
 import math
 
 import pandas as pd
@@ -65,6 +66,32 @@ def _clean(value: Optional[float]) -> Optional[float]:
     return value
 
 
+# IBKR error codes meaning "part of the requested market data needs a subscription
+# you don't have for the API". We run LIVE-only (no delayed fallback); these are
+# surfaced once as a clear diagnostic. In practice 10091 was triggered by the
+# underlying-equity generic ticks (104/106), not by OPRA itself — those ticks are
+# no longer requested (see _request_chain_data).
+#   354   = not subscribed
+#   10089 = requires additional subscription for API
+#   10090 = part of requested market data is not subscribed
+#   10091 = part of requested market data requires additional subscription for API
+#   10167 = market data not subscribed; displaying delayed instead
+_SUBSCRIPTION_ERROR_CODES = {354, 10089, 10090, 10091, 10167}
+
+
+class _SubscriptionErrorFilter(logging.Filter):
+    """Drop ib_async's per-line subscription-error log spam.
+
+    If IBKR ever denies part of the live feed it logs one message per contract per
+    data line — pure noise. We surface a single clear diagnostic via _on_ibkr_error
+    and mute the rest here.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not any(str(code) in msg for code in _SUBSCRIPTION_ERROR_CODES)
+
+
 class IBKRDataFetcher(HybridDataFetcher):
     """Hybrid fetcher with IBKR (ib_async) as the options-data source."""
 
@@ -83,6 +110,13 @@ class IBKRDataFetcher(HybridDataFetcher):
 
         self.ib = None
         self.ibkr_connected = False
+
+        # Market-data type (1=live OPRA). LIVE-ONLY by config — we never fall back
+        # to delayed; if the live feed is unavailable a stock is skipped (warned).
+        self.market_data_type = IBKR_MARKET_DATA_TYPE
+        # Latched by the errorEvent handler so the subscription-denied diagnostic
+        # prints at most once per session (it never changes market_data_type).
+        self._warned_subscription = False
 
         # Per-ticker option-definition cache: {symbol: secdef dict}. reqSecDefOptParams
         # is per-underlying, so we cache expirations + strikes for the session.
@@ -119,13 +153,20 @@ class IBKRDataFetcher(HybridDataFetcher):
                 readonly=True,
                 timeout=15,
             )
-            # 1=live, 3=delayed — fall back is the user's IBKR subscription concern.
-            self.ib.reqMarketDataType(IBKR_MARKET_DATA_TYPE)
+            # Surface "subscription required" errors (10091 etc.) once as a clear
+            # diagnostic and mute the per-line spam — no fallback, we stay live.
+            self.ib.errorEvent += self._on_ibkr_error
+            logging.getLogger("ib_async.wrapper").addFilter(_SubscriptionErrorFilter())
+
+            # LIVE-only (1=live OPRA). We never switch to delayed at runtime; if the
+            # live feed yields no Greeks for a stock it is skipped (see _snapshot_options).
+            self.ib.reqMarketDataType(self.market_data_type)
 
             self.ibkr_connected = True
+            mode = "LIVE" if self.market_data_type == 1 else "DELAYED ~15min"
             print(f"[OK] Connected to IB Gateway at {self.ib_host}:{self.ib_port}")
             print("     Stock quotes: FMP API (Real-time)")
-            print("     Options data: IBKR API (ib_async)")
+            print(f"     Options data: IBKR API ({mode})")
             return True
 
         except Exception as e:
@@ -151,6 +192,22 @@ class IBKRDataFetcher(HybridDataFetcher):
                 raise RuntimeError(
                     "IB Gateway not connected - required for options data"
                 )
+
+    def _on_ibkr_error(self, reqId, errorCode, errorString, contract=None):
+        """ib_async errorEvent handler: one-time subscription-denied diagnostic.
+
+        We run live-only and never fall back to delayed, so this only surfaces a
+        single clear hint (the per-line spam is muted by _SubscriptionErrorFilter).
+        It must not change market_data_type.
+        """
+        if errorCode in _SUBSCRIPTION_ERROR_CODES and not self._warned_subscription:
+            self._warned_subscription = True
+            print(
+                f"[WARN] IBKR denied part of the live feed (Error {errorCode}). "
+                "Live Greeks need OPRA enabled for the API; underlying-equity ticks "
+                "are not requested, so verify the OPRA-for-API subscription if Greeks "
+                "are missing."
+            )
 
     # =========================================================================
     # OPTIONS DATA (overrides MooMoo implementations)
@@ -233,22 +290,31 @@ class IBKRDataFetcher(HybridDataFetcher):
         banded = sorted(banded, key=lambda c: abs(c.strike - spot))[:IBKR_MAX_STRIKES]
         return sorted(banded, key=lambda c: c.strike)
 
-    def _snapshot_options(self, contracts: list, right: str) -> List[Dict]:
-        """Stream market data for the qualified contracts and build chain rows.
+    def _request_chain_data(self, contracts: list) -> list:
+        """Open streaming market-data lines for the contracts and return tickers.
 
-        Uses generic ticks 100 (option volume), 101 (open interest), 104
-        (historical vol), 106 (option implied vol) so Greeks + OI populate.
+        Generic ticks 100 (option volume) + 101 (open interest) are OPRA option
+        data. We deliberately do NOT request 104 (historical vol) / 106 (option
+        implied vol): those are *underlying-equity* ticks that pull the stock's
+        NYSE/Nasdaq feed and trip Error 10091 on an OPRA-only subscription. Greeks
+        (delta/gamma/theta/vega + impliedVol) arrive automatically as modelGreeks
+        on the option tick — they don't need 104/106.
         """
-        tickers = [
-            self.ib.reqMktData(c, genericTickList="100,101,104,106", snapshot=False)
+        return [
+            self.ib.reqMktData(c, genericTickList="100,101", snapshot=False)
             for c in contracts
         ]
 
-        # Pump the event loop until Greeks arrive (or we time out). Delayed data is
-        # slower than live, and illiquid deep-OTM strikes may never populate, so we
-        # stop once everything that's going to arrive has — not strictly all of them.
+    def _pump_until_ready(self, tickers: list) -> int:
+        """Pump the event loop until Greeks arrive (or we time out).
+
+        Delayed data is slower than live, and illiquid deep-OTM strikes may never
+        populate, so we stop once everything that's going to arrive has — not
+        strictly all of them. Returns the count of tickers with modelGreeks.
+        """
         prev_ready = -1
         stable = 0
+        ready = 0
         for _ in range(30):  # ~15s max
             self.ib.sleep(0.5)
             ready = sum(1 for t in tickers if t.modelGreeks is not None)
@@ -259,6 +325,23 @@ class IBKRDataFetcher(HybridDataFetcher):
             if ready > 0 and stable >= 4:
                 break
             prev_ready = ready
+        return ready
+
+    def _snapshot_options(self, contracts: list, right: str) -> List[Dict]:
+        """Stream LIVE market data for the qualified contracts and build chain rows.
+
+        Live-only: if no Greeks arrive (market closed, or a subscription gap), we
+        warn and let the caller skip this stock — we never substitute delayed data.
+        """
+        tickers = self._request_chain_data(contracts)
+        ready = self._pump_until_ready(tickers)
+
+        if ready == 0:
+            sym = contracts[0].symbol if contracts else "?"
+            print(
+                f"[WARN] {sym}: no live OPRA Greeks (market closed or subscription) "
+                "— skipping."
+            )
 
         rows = []
         for c, t in zip(contracts, tickers):

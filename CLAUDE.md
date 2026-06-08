@@ -10,8 +10,14 @@ see main_ibkr.py) | yfinance (legacy: historical/IV only).
 See @requirements.txt for deps · @README.md for the full weekly workflow.
 
 ## Build & Run
-- Scan: `python main.py wheel [--capital N | --liquid-only | --mock]`  (default --capital 8900)
-- Scan (IBKR options instead of MooMoo): `python main_ibkr.py wheel [--capital N | --mock]`
+- Two entry points, one per options-data source — identical flags/scan logic (shared in
+  `scanner_app.py`), they differ ONLY in where the options chain + Greeks come from:
+  - `python main_moomoo.py wheel [--capital N | --liquid-only | --mock]` — **MooMoo OpenD** options.
+  - `python main_ibkr.py wheel [...]` — **IBKR** options (live OPRA, the live-trading path).
+  Default `--capital 8900`. Stock quotes (FMP) and history (yfinance) are the same on both; trades
+  are placed manually on MooMoo regardless.
+- Adding or changing a CLI flag or scan step: edit `scanner_app.py` (the shared core), not the two
+  thin entry points — each just defines a `DataSource` (fetcher factory, banner label, connect hints).
 - Refresh universe (bi-weekly): `python universe_builder.py [--dry-run]`
 - Earnings calendar: `python earnings_monitor.py`
 - VIX regime: `python vix_monitor.py --status`
@@ -47,12 +53,20 @@ Use the statistical-validation skill.
   stock quotes still work via FMP, but the scan returns no candidates.
 - MooMoo tickers need a `US.` prefix (use `format_moomoo_symbol()` in universe.py); options require an
   OPRA subscription (free with $3k+ MooMoo balance) for Greeks.
-- IBKR path (main_ibkr.py / ibkr_data_fetcher.py) needs IB Gateway/TWS running AND logged in; the API
-  port is `config.IBKR_PORT` (default 4002 here). Paper vs live is set by the Gateway login, NOT the
-  port. Stock quotes stay on FMP and history on yfinance — only the options chain moves to IBKR.
-- Real-time IBKR option Greeks need an OPRA market-data subscription. The connected live account
-  (U13380098) lacks it, so `config.IBKR_MARKET_DATA_TYPE = 3` (delayed, ~15 min) is the working
-  default — adequate for 30–45 DTE screening. Set it to `1` after subscribing to OPRA for real-time.
+- IBKR options come from `main_ibkr.py` → ibkr_data_fetcher.py (MooMoo options come from `main_moomoo.py` →
+  data_fetcher.py). IBKR needs IB Gateway/TWS running AND logged in; the API port is `config.IBKR_PORT`
+  (default 4001 here). Paper vs live is set by the Gateway login, NOT the port. Stock quotes stay on
+  FMP and history on yfinance — only the options chain comes from IBKR.
+- OPRA market data is subscribed on the live account (U13380098); `config.IBKR_MARKET_DATA_TYPE = 1`
+  (live) and the fetcher is **LIVE-ONLY — it never falls back to delayed** (delayed quotes are
+  stale/wide and produce junk candidates after-hours). If the live feed yields no Greeks for a stock
+  (market closed, or a subscription gap) that stock is **skipped with a warning** in
+  `_snapshot_options`. **Error 10091** was caused by underlying-equity generic ticks (104/106) that
+  pull the stock's NYSE/Nasdaq feed (not subscribed — stock quotes come from FMP); the chain request
+  now uses only OPRA option ticks (`genericTickList="100,101"`) and Greeks arrive via `modelGreeks`.
+  If 10091 still appears, `_on_ibkr_error` prints a one-time hint: OPRA must be subscribed AND
+  **API-enabled** for U13380098 (IBKR Account Management → Market Data Subscriptions; check the
+  Gateway "Market Data Connections" dialog).
 - FMP Starter plan = 250 calls/day. Cache responses; never re-fetch within a TTL window.
 - FMP API key is hardcoded in [config.py:10](config.py#L10) — treat as a secret; do not log or commit
   new copies. (Tracked for migration to an env var.)

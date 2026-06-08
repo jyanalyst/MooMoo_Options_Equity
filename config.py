@@ -67,13 +67,16 @@ API_DELAY_SECONDS = 3
 # subscription for live option Greeks. Stock quotes still come from FMP and
 # historical prices from yfinance — only the options chain moves to IBKR.
 IBKR_HOST = "127.0.0.1"
-IBKR_PORT = 4002  # configured Gateway API socket (paper/live is set by the Gateway
+IBKR_PORT = 4001  # configured Gateway API socket (paper/live is set by the Gateway
 # login, NOT the port; IBKR defaults: Gateway 4001/4002, TWS 7496/7497).
-# This machine's Gateway serves LIVE account U13380098 on 4002.
+# This machine's Gateway serves account U13380098 on 4001.
 IBKR_CLIENT_ID = 11  # any unique integer per concurrent API client
-IBKR_MARKET_DATA_TYPE = (
-    3  # 1=live (needs OPRA), 2=frozen, 3=delayed (free), 4=delayed-frozen
-)
+# 1=live (needs OPRA), 2=frozen, 3=delayed (free), 4=delayed-frozen.
+# LIVE-ONLY by design: OPRA is subscribed on U13380098 and delayed quotes are
+# stale/wide (junk after-hours), so IBKRDataFetcher never falls back to delayed.
+# If the live feed yields no Greeks for a stock (market closed, or a subscription
+# gap), that stock is skipped with a warning rather than filled with delayed data.
+IBKR_MARKET_DATA_TYPE = 1
 # Strike band (fraction of spot) to request per expiration when building a PUT
 # chain — keeps simultaneous market-data lines well under IBKR's ~100 limit.
 IBKR_PUT_STRIKE_BAND = (0.70, 1.02)

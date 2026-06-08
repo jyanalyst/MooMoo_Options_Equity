@@ -1,11 +1,16 @@
 # Options Income Scanner
 
 Automated screening tool for options income strategies using a **hybrid data approach**:
-- **Stock quotes**: yfinance (FREE - no subscription needed)
-- **Options data**: MooMoo API (requires OPRA - FREE with $3k+ assets)
+- **Stock quotes**: FMP API (real-time)
+- **Options data**: two interchangeable sources, one per entry point —
+  - `python main_ibkr.py wheel` → **IBKR** API via ib_async / IB Gateway (live OPRA subscription)
+  - `python main_moomoo.py wheel` → **MooMoo** OpenD (OPRA via a $3k+ MooMoo balance)
+- **Historical prices / IV**: yfinance (FREE)
 - **Fundamentals**: Financial Modeling Prep (FMP) API
 
-This hybrid approach **saves $60/month** by avoiding the Nasdaq Basic OpenAPI subscription.
+Both entry points share the same CLI/scan logic (`scanner_app.py`) and differ only in the options
+source. **Trades are still placed manually on MooMoo**; the scanner is read-only market data,
+decoupled from order placement.
 
 ## Strategy: Wheel (Cash-Secured Puts)
 
@@ -43,7 +48,7 @@ SUNDAY MORNING ROUTINE (~30 minutes)
    - HIGH (>25): Maximum opportunity - deploy all capital
 
 4. SCAN FOR CANDIDATES
-   python main.py wheel --capital 6700    # 15% position sizing
+   python main_moomoo.py wheel --capital 6700    # 15% position sizing
 
 5. REVIEW & PLAN
    - Cross-reference scan results with earnings CSV
@@ -109,7 +114,7 @@ cd options_scanner
 # Install dependencies
 pip install -r requirements.txt
 
-# Make sure MooMoo OpenD is running and logged in
+# Make sure IB Gateway/TWS is running and logged in (for options data)
 ```
 
 ## Usage
@@ -117,16 +122,16 @@ pip install -r requirements.txt
 ### Main Scanner
 ```bash
 # Scan for Wheel candidates
-python main.py wheel
+python main_moomoo.py wheel
 
 # Scan stocks requiring ≤$6,700/position (15% sizing)
-python main.py wheel --capital 6700
+python main_moomoo.py wheel --capital 6700
 
 # Interactive mode to view candidate details
-python main.py wheel -i
+python main_moomoo.py wheel -i
 
 # Quiet mode (minimal output)
-python main.py wheel --quiet
+python main_moomoo.py wheel --quiet
 ```
 
 ### Earnings Monitor
@@ -203,7 +208,9 @@ Edit `universe.py` to customize:
 
 ```
 options_scanner/
-├── main.py                 # CLI entry point for scanning
+├── main_moomoo.py          # Entry point — MooMoo options source
+├── main_ibkr.py            # Entry point — IBKR options source
+├── scanner_app.py          # Shared CLI/scan logic (used by both entry points)
 ├── config.py               # Strategy parameters
 ├── universe.py             # Stock universe + metadata
 ├── universe_builder.py     # Bi-weekly universe refresh
@@ -211,7 +218,8 @@ options_scanner/
 ├── earnings_monitor.py     # Weekly earnings calendar CSV
 ├── vix_monitor.py          # VIX regime tracking CSV
 │
-├── data_fetcher.py         # MooMoo API wrapper
+├── data_fetcher.py         # MooMoo options + FMP/yfinance (HybridDataFetcher)
+├── ibkr_data_fetcher.py    # IBKR options source (subclass of HybridDataFetcher)
 ├── fmp_data_fetcher.py     # FMP API for fundamentals
 ├── iv_analyzer.py          # IV Rank & term structure
 ├── earnings_checker.py     # Earnings date validation
@@ -263,12 +271,12 @@ options_scanner/
 ## Requirements
 
 - **Python 3.8+**
-- **yfinance** - For stock quotes (FREE)
-- **MooMoo OpenD** - Running locally for options data
-- **OPRA subscription** - FREE with $3k+ assets in MooMoo account
-- **FMP API key** - For fundamental data (Starter plan sufficient)
+- **FMP API key** - For stock quotes and fundamental data (Starter plan sufficient)
+- **IB Gateway / TWS** - Running locally and logged in for options data (via ib_async)
+- **OPRA subscription** - On the connected IBKR account, for live option Greeks
+- **yfinance** - For historical prices / IV (FREE)
 
-**Note**: You do NOT need the $60/month Nasdaq Basic OpenAPI subscription.
+**Note**: Trades are placed manually on MooMoo; the scanner only reads market data.
 
 ---
 
@@ -279,7 +287,7 @@ options_scanner/
 python universe_builder.py          # Every 2 weeks
 python earnings_monitor.py          # Check earnings
 python vix_monitor.py --status      # Check VIX regime
-python main.py wheel --capital 6700 # Scan candidates
+python main_moomoo.py wheel --capital 6700 # Scan candidates
 
 # Daily workflow
 python vix_monitor.py               # Log VIX (morning)

@@ -15,11 +15,15 @@ from typing import Optional, List, Dict, Tuple, Any
 from datetime import datetime, timedelta
 import time
 import pandas as pd
-from functools import lru_cache
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # yfinance for stock quotes (free)
 try:
     import yfinance as yf
+
     YFINANCE_AVAILABLE = True
 except ImportError:
     YFINANCE_AVAILABLE = False
@@ -28,14 +32,15 @@ except ImportError:
 # MooMoo imports - for options data only
 try:
     from moomoo import (
-        OpenQuoteContext, 
-        RET_OK, 
-        OptionType, 
+        OpenQuoteContext,
+        RET_OK,
+        OptionType,
         OptionDataFilter,
         OptionCondType,
         KLType,
-        AuType
+        AuType,
     )
+
     MOOMOO_AVAILABLE = True
 except ImportError:
     MOOMOO_AVAILABLE = False
@@ -97,22 +102,37 @@ class HybridDataFetcher:
         # API call tracking (FMP Starter: 250 calls/day limit)
         self._fmp_api_calls = 0
 
+        # Shared FMP HTTP session with connection pooling + retry/backoff.
+        # Mirrors the proven pattern in fmp_data_fetcher.py so transient FMP
+        # latency (slow response under concurrent quote fetches) auto-retries
+        # instead of being dropped as a one-shot timeout.
+        self._fmp_session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET"],
+        )
+        self._fmp_session.mount("https://", HTTPAdapter(max_retries=retry_strategy))
+
         if not YFINANCE_AVAILABLE:
-            raise RuntimeError("yfinance package not installed - required for stock quotes")
+            raise RuntimeError(
+                "yfinance package not installed - required for stock quotes"
+            )
 
         if not MOOMOO_AVAILABLE:
             print("Warning: moomoo-api not available - options data will not work")
-    
+
     @property
     def connected(self) -> bool:
         """Backward compatibility property"""
         return self.moomoo_connected
-    
+
     def connect(self) -> bool:
         """
         Establish connection to MooMoo OpenD for options data.
         Stock quotes use yfinance and don't need connection.
-        
+
         Returns:
             True if connection successful, False otherwise
         """
@@ -129,8 +149,8 @@ class HybridDataFetcher:
             if ret == RET_OK:
                 self.moomoo_connected = True
                 print(f"[OK] Connected to MooMoo OpenD at {self.host}:{self.port}")
-                print(f"     Stock quotes: FMP API (Real-time)")
-                print(f"     Options data: MooMoo API (OPRA)")
+                print("     Stock quotes: FMP API (Real-time)")
+                print("     Options data: MooMoo API (OPRA)")
                 return True
             else:
                 print(f"[ERROR] MooMoo connection test failed: {data}")
@@ -140,7 +160,7 @@ class HybridDataFetcher:
             print(f"[ERROR] Failed to connect to MooMoo OpenD: {e}")
             print("        Options features will not work without OpenD running")
             return False
-    
+
     def disconnect(self):
         """Close connection to MooMoo OpenD"""
         if self.quote_ctx:
@@ -166,10 +186,10 @@ class HybridDataFetcher:
             Dict with API call count and cache stats
         """
         return {
-            'fmp_api_calls': self._fmp_api_calls,
-            'cache_size': len(self._quote_cache),
-            'daily_limit': 250,
-            'remaining': max(0, 250 - self._fmp_api_calls)
+            "fmp_api_calls": self._fmp_api_calls,
+            "cache_size": len(self._quote_cache),
+            "daily_limit": 250,
+            "remaining": max(0, 250 - self._fmp_api_calls),
         }
 
     def _rate_limit(self):
@@ -178,12 +198,14 @@ class HybridDataFetcher:
         if elapsed < API_DELAY_SECONDS:
             time.sleep(API_DELAY_SECONDS - elapsed)
         self.last_request_time = time.time()
-    
+
     def _ensure_moomoo_connected(self):
         """Ensure MooMoo connection is active for options data"""
         if not self.moomoo_connected:
             if not self.connect():
-                raise RuntimeError("MooMoo OpenD not connected - required for options data")
+                raise RuntimeError(
+                    "MooMoo OpenD not connected - required for options data"
+                )
 
     def _fetch_quotes_concurrent(self, tickers: List[str]) -> Dict[str, Dict]:
         """
@@ -241,7 +263,6 @@ class HybridDataFetcher:
             Dict with quote data or None if failed
         """
         from config import FMP_API_KEY
-        import requests
 
         # Strip MooMoo prefix if present
         ticker = strip_moomoo_prefix(ticker)
@@ -255,12 +276,13 @@ class HybridDataFetcher:
 
         try:
             url = "https://financialmodelingprep.com/stable/quote"
-            params = {
-                'symbol': ticker,
-                'apikey': FMP_API_KEY
-            }
+            params = {"symbol": ticker, "apikey": FMP_API_KEY}
 
-            response = requests.get(url, params=params, timeout=10)
+            # Shared session (pooled connections + retry/backoff) with a 30s
+            # timeout — FMP's /stable/quote can take 10-15s under load, so the
+            # old 10s limit dropped slow-but-valid responses. Scalar (not tuple)
+            # timeout matches fmp_data_fetcher.py and is reliable on urllib3 2.x.
+            response = self._fmp_session.get(url, params=params, timeout=30)
             self._fmp_api_calls += 1  # Track API usage
             response.raise_for_status()
             data = response.json()
@@ -271,7 +293,7 @@ class HybridDataFetcher:
 
             quote_data = data[0]  # FMP returns array with single element
 
-            price = float(quote_data.get('price', 0))
+            price = float(quote_data.get("price", 0))
             if price <= 0:
                 print(f"Warning: Invalid price for {ticker}: {price}")
                 return None
@@ -279,17 +301,21 @@ class HybridDataFetcher:
             quote = {
                 "ticker": ticker,
                 "price": price,
-                "bid": float(quote_data.get('bid', price * 0.999)),  # FMP may not have bid
-                "ask": float(quote_data.get('ask', price * 1.001)),  # FMP may not have ask
-                "volume": int(quote_data.get('volume', 0)),
-                "market_cap": int(quote_data.get('marketCap', 0)),
-                "change": float(quote_data.get('change', 0)),
-                "change_pct": float(quote_data.get('changesPercentage', 0)),
-                "day_high": float(quote_data.get('dayHigh', price)),
-                "day_low": float(quote_data.get('dayLow', price)),
-                "prev_close": float(quote_data.get('previousClose', price)),
-                "timestamp": quote_data.get('timestamp', int(now.timestamp())),
-                "source": "FMP"
+                "bid": float(
+                    quote_data.get("bid", price * 0.999)
+                ),  # FMP may not have bid
+                "ask": float(
+                    quote_data.get("ask", price * 1.001)
+                ),  # FMP may not have ask
+                "volume": int(quote_data.get("volume", 0)),
+                "market_cap": int(quote_data.get("marketCap", 0)),
+                "change": float(quote_data.get("change", 0)),
+                "change_pct": float(quote_data.get("changesPercentage", 0)),
+                "day_high": float(quote_data.get("dayHigh", price)),
+                "day_low": float(quote_data.get("dayLow", price)),
+                "prev_close": float(quote_data.get("previousClose", price)),
+                "timestamp": quote_data.get("timestamp", int(now.timestamp())),
+                "source": "FMP",
             }
 
             # Cache the result
@@ -305,7 +331,7 @@ class HybridDataFetcher:
         except Exception as e:
             print(f"Warning: FMP error for {ticker}: {type(e).__name__}: {e}")
             return None
-    
+
     def get_batch_quotes(self, tickers: List[str]) -> Dict[str, Dict]:
         """
         Get quotes for multiple stocks using FMP API with concurrent requests.
@@ -353,11 +379,11 @@ class HybridDataFetcher:
         results.update(self._fetch_quotes_concurrent(tickers_to_fetch))
         print(f"   Retrieved {len(results)}/{len(clean_tickers)} quotes via FMP")
         return results
-    
+
     # =========================================================================
     # OPTIONS DATA - Using MooMoo API (requires OPRA subscription)
     # =========================================================================
-    
+
     def get_option_expirations(self, ticker: str) -> Optional[List[str]]:
         """
         Get available option expiration dates for a stock.
@@ -379,10 +405,12 @@ class HybridDataFetcher:
 
         # Most stocks share the same monthly expirations (3rd Friday)
         # Check cache first
-        if (today in HybridDataFetcher._standard_expirations_cache and
-            HybridDataFetcher._cache_timestamp and
-            (datetime.now() - HybridDataFetcher._cache_timestamp).total_seconds() < HybridDataFetcher._cache_ttl_hours * 3600):
-
+        if (
+            today in HybridDataFetcher._standard_expirations_cache
+            and HybridDataFetcher._cache_timestamp
+            and (datetime.now() - HybridDataFetcher._cache_timestamp).total_seconds()
+            < HybridDataFetcher._cache_ttl_hours * 3600
+        ):
             # Use cached expirations (saves MooMoo API call)
             return HybridDataFetcher._standard_expirations_cache[today]
 
@@ -396,7 +424,7 @@ class HybridDataFetcher:
             ret, data = self.quote_ctx.get_option_expiration_date(code=symbol)
 
             if ret == RET_OK and not data.empty:
-                expirations = data['strike_time'].tolist()
+                expirations = data["strike_time"].tolist()
 
                 # Cache for future use (all stocks in this scan)
                 HybridDataFetcher._standard_expirations_cache[today] = expirations
@@ -410,7 +438,7 @@ class HybridDataFetcher:
         except Exception as e:
             print(f"Error fetching expirations for {ticker}: {e}")
             return None
-    
+
     def get_options_chain(
         self,
         ticker: str,
@@ -419,7 +447,7 @@ class HybridDataFetcher:
         delta_min: Optional[float] = None,
         delta_max: Optional[float] = None,
         volume_min: Optional[int] = None,
-        oi_min: Optional[int] = None
+        oi_min: Optional[int] = None,
     ) -> Optional[pd.DataFrame]:
         """
         Get options chain with full Greeks and pricing data.
@@ -456,17 +484,14 @@ class HybridDataFetcher:
         try:
             # Step 1: Get static option data (codes, strikes, expirations)
             ret, static_data = self.quote_ctx.get_option_chain(
-                code=symbol,
-                start=expiration,
-                end=expiration,
-                option_type=opt_type
+                code=symbol, start=expiration, end=expiration, option_type=opt_type
             )
 
             if ret != RET_OK or static_data is None or static_data.empty:
                 return pd.DataFrame()
 
             # Step 2: Get market snapshot for dynamic pricing data
-            option_codes = static_data['code'].tolist()
+            option_codes = static_data["code"].tolist()
 
             if not option_codes:
                 return pd.DataFrame()
@@ -477,28 +502,30 @@ class HybridDataFetcher:
             ret2, snapshot_data = self.quote_ctx.get_market_snapshot(option_codes)
 
             if ret2 != RET_OK or snapshot_data is None or snapshot_data.empty:
-                print(f"Warning: Could not get pricing data for {ticker} options - snapshot failed")
+                print(
+                    f"Warning: Could not get pricing data for {ticker} options - snapshot failed"
+                )
                 # Return static data only if snapshot fails
                 return static_data
 
             # Step 3: Merge static and dynamic data
             # Snapshot data uses different column names for options
             column_mapping = {
-                'last_price': 'last_price',
-                'bid': 'bid_price',
-                'ask': 'ask_price',
-                'volume': 'volume',
-                'open_interest': 'option_open_interest',
-                'delta': 'option_delta',
-                'gamma': 'option_gamma',
-                'theta': 'option_theta',
-                'vega': 'option_vega',
-                'implied_volatility': 'option_implied_volatility'
+                "last_price": "last_price",
+                "bid": "bid_price",
+                "ask": "ask_price",
+                "volume": "volume",
+                "open_interest": "option_open_interest",
+                "delta": "option_delta",
+                "gamma": "option_gamma",
+                "theta": "option_theta",
+                "vega": "option_vega",
+                "implied_volatility": "option_implied_volatility",
             }
 
             # Create pricing DataFrame with standardized column names
             pricing_data = pd.DataFrame(index=snapshot_data.index)
-            pricing_data['code'] = snapshot_data['code']
+            pricing_data["code"] = snapshot_data["code"]
 
             for standard_col, api_col in column_mapping.items():
                 if api_col in snapshot_data.columns:
@@ -506,59 +533,52 @@ class HybridDataFetcher:
                 else:
                     pricing_data[standard_col] = None
 
-            merged = static_data.merge(
-                pricing_data,
-                on='code',
-                how='left'
-            )
+            merged = static_data.merge(pricing_data, on="code", how="left")
 
             # Step 4: Apply filters on the merged data
-            if delta_min is not None and 'delta' in merged.columns:
-                merged = merged[merged['delta'] >= delta_min]
-            if delta_max is not None and 'delta' in merged.columns:
-                merged = merged[merged['delta'] <= delta_max]
-            if volume_min is not None and 'volume' in merged.columns:
-                merged = merged[merged['volume'] >= volume_min]
-            if oi_min is not None and 'open_interest' in merged.columns:
-                merged = merged[merged['open_interest'] >= oi_min]
+            if delta_min is not None and "delta" in merged.columns:
+                merged = merged[merged["delta"] >= delta_min]
+            if delta_max is not None and "delta" in merged.columns:
+                merged = merged[merged["delta"] <= delta_max]
+            if volume_min is not None and "volume" in merged.columns:
+                merged = merged[merged["volume"] >= volume_min]
+            if oi_min is not None and "open_interest" in merged.columns:
+                merged = merged[merged["open_interest"] >= oi_min]
 
             return merged
 
         except Exception as e:
             print(f"Error fetching options chain for {ticker} @ {expiration}: {e}")
             return None
-    
+
     # =========================================================================
     # HISTORICAL DATA - Using yfinance (FREE)
     # =========================================================================
-    
+
     def get_historical_data(
-        self,
-        ticker: str,
-        days: int = 252,
-        ktype: str = "DAY"
+        self, ticker: str, days: int = 252, ktype: str = "DAY"
     ) -> Optional[pd.DataFrame]:
         """
         Get historical price data for a stock using yfinance (FREE).
-        
+
         Args:
             ticker: Stock ticker
             days: Number of days of history
             ktype: Candlestick type ('DAY', 'WEEK', 'MONTH') - mapped to yfinance intervals
-            
+
         Returns:
             DataFrame with OHLCV data or None
         """
         ticker = strip_moomoo_prefix(ticker)
-        
+
         # Map ktype to yfinance interval
         interval_map = {
             "DAY": "1d",
-            "WEEK": "1wk", 
+            "WEEK": "1wk",
             "MONTH": "1mo",
         }
         interval = interval_map.get(ktype.upper(), "1d")
-        
+
         # Calculate period
         if days <= 7:
             period = "5d"
@@ -574,59 +594,56 @@ class HybridDataFetcher:
             period = "2y"
         else:
             period = "5y"
-        
+
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period=period, interval=interval)
-            
+
             if hist.empty:
                 print(f"Warning: No historical data for {ticker}")
                 return None
-            
+
             # Rename columns to match expected format
             hist = hist.reset_index()
             hist.columns = [c.lower() for c in hist.columns]
-            
+
             # Rename 'date' to 'time_key' for compatibility
-            if 'date' in hist.columns:
-                hist = hist.rename(columns={'date': 'time_key'})
-            elif 'datetime' in hist.columns:
-                hist = hist.rename(columns={'datetime': 'time_key'})
-            
+            if "date" in hist.columns:
+                hist = hist.rename(columns={"date": "time_key"})
+            elif "datetime" in hist.columns:
+                hist = hist.rename(columns={"datetime": "time_key"})
+
             return hist
-            
+
         except Exception as e:
             print(f"Error fetching historical data for {ticker}: {e}")
             return None
-    
+
     def calculate_dte(self, expiration: str) -> int:
         """
         Calculate days to expiration.
-        
+
         Args:
             expiration: Expiration date string (YYYY-MM-DD)
-            
+
         Returns:
             Number of days to expiration
         """
-        exp_date = datetime.strptime(expiration, '%Y-%m-%d')
+        exp_date = datetime.strptime(expiration, "%Y-%m-%d")
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         return (exp_date - today).days
-    
+
     def filter_expirations_by_dte(
-        self, 
-        expirations: List[str], 
-        dte_min: int, 
-        dte_max: int
+        self, expirations: List[str], dte_min: int, dte_max: int
     ) -> List[Tuple[str, int]]:
         """
         Filter expiration dates by DTE range.
-        
+
         Args:
             expirations: List of expiration dates
             dte_min: Minimum DTE
             dte_max: Maximum DTE
-            
+
         Returns:
             List of (expiration, dte) tuples within range
         """
@@ -642,32 +659,42 @@ class HybridDataFetcher:
 # MOCK DATA FETCHER (for testing without MooMoo connection)
 # =============================================================================
 
+
 class MockDataFetcher:
     """
     Mock data fetcher for testing scanner logic without MooMoo connection.
     Returns realistic sample data.
     """
-    
+
     def __init__(self):
         self.connected = True
         print("[WARN] Using MockDataFetcher - no real market data")
-    
+
     def connect(self) -> bool:
         return True
-    
+
     def disconnect(self):
         pass
-    
+
     def get_stock_quote(self, ticker: str) -> Dict:
         """Return mock quote data"""
         # Sample prices for common tickers
         mock_prices = {
-            "INTC": 22.50, "AMD": 125.00, "PLTR": 45.00, "F": 11.00,
-            "TSLA": 250.00, "GME": 25.00, "AMC": 5.50, "MARA": 18.00,
-            "NVDA": 480.00, "AAPL": 185.00, "SOFI": 12.00, "HOOD": 22.00,
+            "INTC": 22.50,
+            "AMD": 125.00,
+            "PLTR": 45.00,
+            "F": 11.00,
+            "TSLA": 250.00,
+            "GME": 25.00,
+            "AMC": 5.50,
+            "MARA": 18.00,
+            "NVDA": 480.00,
+            "AAPL": 185.00,
+            "SOFI": 12.00,
+            "HOOD": 22.00,
         }
         price = mock_prices.get(ticker, 50.00)
-        
+
         return {
             "ticker": ticker,
             "price": price,
@@ -675,10 +702,10 @@ class MockDataFetcher:
             "ask": price + 0.02,
             "volume": 1000000,
         }
-    
+
     def get_batch_quotes(self, tickers: List[str]) -> Dict[str, Dict]:
         return {t: self.get_stock_quote(t) for t in tickers}
-    
+
     def get_option_expirations(self, ticker: str) -> List[str]:
         """Return mock expiration dates"""
         today = datetime.now()
@@ -688,71 +715,79 @@ class MockDataFetcher:
             # Adjust to Friday
             days_until_friday = (4 - exp_date.weekday()) % 7
             exp_date = exp_date + timedelta(days=days_until_friday)
-            expirations.append(exp_date.strftime('%Y-%m-%d'))
+            expirations.append(exp_date.strftime("%Y-%m-%d"))
         return expirations
-    
+
     def get_options_chain(self, ticker: str, expiration: str, **kwargs) -> pd.DataFrame:
         """Return mock options chain"""
         quote = self.get_stock_quote(ticker)
-        price = quote['price']
-        
+        price = quote["price"]
+
         # Generate strikes around current price
-        strikes = [price * (1 - i*0.05) for i in range(-3, 8)]
-        
+        strikes = [price * (1 - i * 0.05) for i in range(-3, 8)]
+
         data = []
         for strike in strikes:
             delta = -0.5 * (1 - (price - strike) / price)  # Simplified delta calc
             delta = max(-0.95, min(-0.05, delta))
-            
-            data.append({
-                'code': f"US.{ticker}XXXXP{int(strike*1000):08d}",
-                'strike_price': round(strike, 2),
-                'strike_time': expiration,
-                'option_type': 'PUT',
-                'delta': round(delta, 3),
-                'gamma': 0.05,
-                'theta': -0.03,
-                'vega': 0.15,
-                'implied_volatility': 0.35,
-                'open_interest': 5000,
-                'volume': 1500,
-                'bid': round(abs(delta) * 3, 2),
-                'ask': round(abs(delta) * 3 + 0.10, 2),
-                'last_price': round(abs(delta) * 3 + 0.05, 2),
-            })
-        
+
+            data.append(
+                {
+                    "code": f"US.{ticker}XXXXP{int(strike * 1000):08d}",
+                    "strike_price": round(strike, 2),
+                    "strike_time": expiration,
+                    "option_type": "PUT",
+                    "delta": round(delta, 3),
+                    "gamma": 0.05,
+                    "theta": -0.03,
+                    "vega": 0.15,
+                    "implied_volatility": 0.35,
+                    "open_interest": 5000,
+                    "volume": 1500,
+                    "bid": round(abs(delta) * 3, 2),
+                    "ask": round(abs(delta) * 3 + 0.10, 2),
+                    "last_price": round(abs(delta) * 3 + 0.05, 2),
+                }
+            )
+
         return pd.DataFrame(data)
-    
-    def get_historical_data(self, ticker: str, days: int = 252, **kwargs) -> pd.DataFrame:
+
+    def get_historical_data(
+        self, ticker: str, days: int = 252, **kwargs
+    ) -> pd.DataFrame:
         """Return mock historical data"""
         import numpy as np
-        
+
         quote = self.get_stock_quote(ticker)
-        current_price = quote['price']
-        
-        dates = pd.date_range(end=datetime.now(), periods=days, freq='D')
-        
+        current_price = quote["price"]
+
+        dates = pd.date_range(end=datetime.now(), periods=days, freq="D")
+
         # Generate random walk prices
         returns = np.random.normal(0.0002, 0.02, days)
         prices = current_price * np.exp(np.cumsum(returns[::-1]))[::-1]
-        
-        data = pd.DataFrame({
-            'time_key': dates,
-            'open': prices * (1 + np.random.uniform(-0.01, 0.01, days)),
-            'high': prices * (1 + np.random.uniform(0, 0.02, days)),
-            'low': prices * (1 - np.random.uniform(0, 0.02, days)),
-            'close': prices,
-            'volume': np.random.randint(1000000, 10000000, days),
-        })
-        
+
+        data = pd.DataFrame(
+            {
+                "time_key": dates,
+                "open": prices * (1 + np.random.uniform(-0.01, 0.01, days)),
+                "high": prices * (1 + np.random.uniform(0, 0.02, days)),
+                "low": prices * (1 - np.random.uniform(0, 0.02, days)),
+                "close": prices,
+                "volume": np.random.randint(1000000, 10000000, days),
+            }
+        )
+
         return data
-    
+
     def calculate_dte(self, expiration: str) -> int:
-        exp_date = datetime.strptime(expiration, '%Y-%m-%d')
+        exp_date = datetime.strptime(expiration, "%Y-%m-%d")
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         return (exp_date - today).days
-    
-    def filter_expirations_by_dte(self, expirations: List[str], dte_min: int, dte_max: int) -> List[Tuple[str, int]]:
+
+    def filter_expirations_by_dte(
+        self, expirations: List[str], dte_min: int, dte_max: int
+    ) -> List[Tuple[str, int]]:
         filtered = []
         for exp in expirations:
             dte = self.calculate_dte(exp)
@@ -765,23 +800,24 @@ class MockDataFetcher:
 # FACTORY FUNCTION
 # =============================================================================
 
+
 def get_data_fetcher(use_mock: bool = False) -> Any:
     """
     Get appropriate data fetcher based on availability.
-    
+
     Args:
         use_mock: Force use of mock data fetcher
-        
+
     Returns:
         HybridDataFetcher or MockDataFetcher instance
     """
     if use_mock:
         return MockDataFetcher()
-    
+
     if not YFINANCE_AVAILABLE:
         print("Warning: yfinance not available, using mock data")
         return MockDataFetcher()
-    
+
     return HybridDataFetcher()
 
 
@@ -794,11 +830,11 @@ MooMooDataFetcher = HybridDataFetcher
 # =============================================================================
 
 if __name__ == "__main__":
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("HYBRID DATA FETCHER TEST")
     print("Stock quotes: FMP API (Real-time)")
     print("Options data: MooMoo API (OPRA)")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     fetcher = get_data_fetcher(use_mock=False)
 
@@ -812,7 +848,7 @@ if __name__ == "__main__":
 
     # Test previously failing tickers
     print("\n--- Testing Previously Failing Tickers (FMP) ---")
-    for ticker in ['K', 'DFS']:
+    for ticker in ["K", "DFS"]:
         quote = fetcher.get_stock_quote(ticker)
         if quote:
             print(f"{ticker}: ${quote['price']:.2f} (source: {quote['source']})")
@@ -824,14 +860,14 @@ if __name__ == "__main__":
     quotes = fetcher.get_batch_quotes(["INTC", "AMD", "NVDA"])
     for ticker, q in quotes.items():
         print(f"{ticker}: ${q['price']:.2f}")
-    
+
     # Test historical data (yfinance)
     print("\n--- Testing Historical Data (yfinance) ---")
     hist = fetcher.get_historical_data("INTC", days=30)
     if hist is not None:
         print(f"Got {len(hist)} days of history for INTC")
-        print(hist[['time_key', 'close']].tail(3))
-    
+        print(hist[["time_key", "close"]].tail(3))
+
     # Test MooMoo connection for options
     print("\n--- Testing MooMoo Connection (Options) ---")
     if fetcher.connect():
@@ -839,17 +875,17 @@ if __name__ == "__main__":
         exps = fetcher.get_option_expirations("INTC")
         if exps:
             print(f"INTC expirations: {exps[:5]}...")
-            
+
             # Test options chain
             chain = fetcher.get_options_chain("INTC", exps[4], option_type="PUT")
             if chain is not None and not chain.empty:
                 print(f"Got {len(chain)} PUT options for INTC @ {exps[4]}")
-                print(chain[['strike_price', 'delta', 'bid', 'ask']].head())
+                print(chain[["strike_price", "delta", "bid", "ask"]].head())
             else:
                 print("No options chain data returned")
         else:
             print("No expirations returned")
-        
+
         fetcher.disconnect()
     else:
         print("Could not connect to MooMoo - options test skipped")
