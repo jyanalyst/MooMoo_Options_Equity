@@ -3,6 +3,7 @@ Configuration settings for Options Scanner
 Strategy parameters derived from Wheel Strategy Guide
 """
 
+import os
 import platform
 import subprocess
 
@@ -10,7 +11,27 @@ import subprocess
 # FINANCIAL MODELING PREP API SETTINGS
 # =============================================================================
 
-FMP_API_KEY = "SUmg1Fkg9IxxPrCGF8HFP3sdLLl35IUk"
+
+def _load_dotenv(path: str = ".env") -> None:
+    """Minimal stdlib .env loader: KEY=VALUE lines, existing env vars win."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+    except OSError:
+        pass
+
+
+_load_dotenv()
+
+# Prefer the FMP_API_KEY env var (set it in .env — gitignored). The fallback
+# literal is the legacy key already present in git history; treat as a secret,
+# never log it, and migrate fully to the env var when the key is rotated.
+FMP_API_KEY = os.environ.get("FMP_API_KEY", "SUmg1Fkg9IxxPrCGF8HFP3sdLLl35IUk")
 FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 
 # =============================================================================

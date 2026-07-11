@@ -38,8 +38,8 @@ from datetime import datetime
 
 import pandas as pd
 
-from config import FMP_API_KEY
-from fmp_data_fetcher import FMPDataFetcher
+from fmp_client import FMPClient, get_client
+
 
 # =============================================================================
 # CONFIG — all tunables in one place, no scattered magic numbers
@@ -181,15 +181,18 @@ def get_stock_metadata(ticker: str) -> dict:
 # =============================================================================
 
 
-def fetch_candidate_pool(fetcher: FMPDataFetcher, verbose: bool = False) -> list:
+def fetch_candidate_pool(client: FMPClient, verbose: bool = False) -> list:
     """Screen for large, liquid, optionable names. Returns up to FUNDAMENTAL_POOL_CAP
     screener rows, ranked by dollar volume (price * volume) as an options-liquidity proxy."""
-    rows = fetcher.screen_stocks(
-        market_cap_min=MIN_MARKET_CAP,
-        price_min=PRICE_MIN,
-        price_max=PRICE_MAX,
-        volume_min=MIN_AVG_VOLUME,
-        limit=SCREENER_LIMIT,
+    rows = (
+        client.company_screener(
+            marketCapMoreThan=int(MIN_MARKET_CAP),
+            priceMoreThan=PRICE_MIN,
+            priceLowerThan=PRICE_MAX,
+            volumeMoreThan=MIN_AVG_VOLUME,
+            limit=SCREENER_LIMIT,
+        )
+        or []
     )
     print(f"[1/6] Screener returned {len(rows)} rows")
 
@@ -244,12 +247,12 @@ def fetch_candidate_pool(fetcher: FMPDataFetcher, verbose: bool = False) -> list
 
 
 def fetch_fundamentals(
-    fetcher: FMPDataFetcher, pool: list, verbose: bool = False
+    client: FMPClient, pool: list, verbose: bool = False
 ) -> pd.DataFrame:
     """Enrich each candidate with TTM ratios via ONE ratios-ttm call per name."""
     records = []
     for i, p in enumerate(pool, 1):
-        data = fetcher._fetch_with_cache("ratios-ttm", {"symbol": p["ticker"]})
+        data = client.ratios_ttm(p["ticker"])
         row = data[0] if data else None
         if not row:
             if verbose:
@@ -269,7 +272,7 @@ def fetch_fundamentals(
     df = pd.DataFrame(records)
     print(
         f"[3/6] Fundamentals fetched for {len(df)} names "
-        f"(~{fetcher.request_count} live FMP calls this run)"
+        f"(~{client.request_count} live FMP calls this run)"
     )
     return df
 
@@ -484,9 +487,9 @@ def write_universe_file(content: str, output_path: str, backup: bool = True):
 
 
 def build_universe(args) -> str:
-    fetcher = FMPDataFetcher(api_key=FMP_API_KEY)
+    client = get_client()
 
-    pool = fetch_candidate_pool(fetcher, args.verbose)
+    pool = fetch_candidate_pool(client, args.verbose)
     if not pool:
         print(
             "[ERROR] Screener returned no candidates — aborting (universe.py unchanged)."
@@ -494,7 +497,7 @@ def build_universe(args) -> str:
         sys.exit(1)
     screened = len(pool)
 
-    df = fetch_fundamentals(fetcher, pool, args.verbose)
+    df = fetch_fundamentals(client, pool, args.verbose)
     df = apply_quality_gate(df, args.verbose)
     gated = len(df)
     if gated < 15:

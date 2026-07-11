@@ -17,9 +17,6 @@ import math
 import time
 import pandas as pd
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 # yfinance for stock quotes (free)
 try:
@@ -48,6 +45,7 @@ except ImportError:
     print("Warning: moomoo-api not installed. Run: pip install moomoo-api")
 
 from config import MOOMOO_HOST, MOOMOO_PORT, API_DELAY_SECONDS
+from fmp_client import get_client
 from universe import format_moomoo_symbol, strip_moomoo_prefix
 
 
@@ -92,22 +90,9 @@ class HybridDataFetcher:
         self.moomoo_connected = False
         self.last_request_time = 0
 
-        # Quote caching with 15-minute TTL
-        self._quote_cache: Dict[str, Tuple[Dict, datetime]] = {}
-        self._quote_cache_ttl = timedelta(minutes=15)
-
-        # Shared FMP HTTP session with connection pooling + retry/backoff.
-        # Mirrors the proven pattern in fmp_data_fetcher.py so transient FMP
-        # latency (slow response under concurrent quote fetches) auto-retries
-        # instead of being dropped as a one-shot timeout.
-        self._fmp_session = requests.Session()
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET"],
-        )
-        self._fmp_session.mount("https://", HTTPAdapter(max_retries=retry_strategy))
+        # All FMP HTTP goes through the shared client (session + retry +
+        # 1 req/s throttle + 15-min quote file cache).
+        self._fmp = get_client()
 
         if not YFINANCE_AVAILABLE:
             raise RuntimeError(
@@ -164,7 +149,6 @@ class HybridDataFetcher:
 
     def clear_cache(self):
         """Clear all cached data"""
-        self._quote_cache.clear()
         HybridDataFetcher._standard_expirations_cache.clear()
         HybridDataFetcher._cache_timestamp = None
         print("Cache cleared")
@@ -184,54 +168,14 @@ class HybridDataFetcher:
                     "MooMoo OpenD not connected - required for options data"
                 )
 
-    def _fetch_quotes_concurrent(self, tickers: List[str]) -> Dict[str, Dict]:
-        """
-        Fetch quotes for multiple tickers using rate-limited concurrent requests.
-
-        FMP Starter plan requires individual API calls. This method fetches them
-        concurrently with rate limiting to avoid overwhelming the API.
-
-        Performance: 30 stocks in ~3-4 seconds (vs ~30s sequential)
-
-        Args:
-            tickers: List of stock tickers to fetch
-
-        Returns:
-            Dict mapping ticker to quote data
-        """
-        import concurrent.futures
-
-        results = {}
-
-        # Limit concurrency to avoid rate limits (5 workers = ~5 requests/second)
-        max_workers = min(len(tickers), 5)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_ticker = {
-                executor.submit(self.get_stock_quote, ticker): ticker
-                for ticker in tickers
-            }
-
-            for future in concurrent.futures.as_completed(future_to_ticker):
-                ticker = future_to_ticker[future]
-                try:
-                    quote = future.result()
-                    if quote:
-                        results[ticker] = quote
-                except Exception as e:
-                    print(f"   Warning: Failed to fetch {ticker}: {e}")
-
-        return results
-
     # =========================================================================
     # STOCK QUOTES - Using FMP API (REAL-TIME)
     # =========================================================================
 
     def get_stock_quote(self, ticker: str) -> Optional[Dict]:
         """
-        Get current quote for a stock using FMP API (real-time or 5-min delayed).
-
-        Replaces yfinance (unreliable, 15-min delayed) with FMP (reliable, real-time).
+        Get current quote for a stock via the shared FMPClient (15-min file
+        cache; live fetches are throttled to 1 req/s per the Starter plan).
 
         Args:
             ticker: Stock ticker (e.g., 'AAPL')
@@ -239,85 +183,43 @@ class HybridDataFetcher:
         Returns:
             Dict with quote data or None if failed
         """
-        from config import FMP_API_KEY
-
         # Strip MooMoo prefix if present
         ticker = strip_moomoo_prefix(ticker)
 
-        # Check cache first
-        now = datetime.now()
-        if ticker in self._quote_cache:
-            cached_quote, cached_time = self._quote_cache[ticker]
-            if now - cached_time < self._quote_cache_ttl:
-                return cached_quote
-
-        try:
-            url = "https://financialmodelingprep.com/stable/quote"
-            params = {"symbol": ticker, "apikey": FMP_API_KEY}
-
-            # Shared session (pooled connections + retry/backoff) with a 30s
-            # timeout — FMP's /stable/quote can take 10-15s under load, so the
-            # old 10s limit dropped slow-but-valid responses. Scalar (not tuple)
-            # timeout matches fmp_data_fetcher.py and is reliable on urllib3 2.x.
-            response = self._fmp_session.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            data = response.json()
-
-            if not data or len(data) == 0:
-                print(f"Warning: No quote data for {ticker} from FMP")
-                return None
-
-            quote_data = data[0]  # FMP returns array with single element
-
-            price = float(quote_data.get("price", 0))
-            if price <= 0:
-                print(f"Warning: Invalid price for {ticker}: {price}")
-                return None
-
-            quote = {
-                "ticker": ticker,
-                "price": price,
-                "bid": float(
-                    quote_data.get("bid", price * 0.999)
-                ),  # FMP may not have bid
-                "ask": float(
-                    quote_data.get("ask", price * 1.001)
-                ),  # FMP may not have ask
-                "volume": int(quote_data.get("volume", 0)),
-                "market_cap": int(quote_data.get("marketCap", 0)),
-                "change": float(quote_data.get("change", 0)),
-                "change_pct": float(quote_data.get("changesPercentage", 0)),
-                "day_high": float(quote_data.get("dayHigh", price)),
-                "day_low": float(quote_data.get("dayLow", price)),
-                "prev_close": float(quote_data.get("previousClose", price)),
-                "timestamp": quote_data.get("timestamp", int(now.timestamp())),
-                "source": "FMP",
-            }
-
-            # Cache the result
-            self._quote_cache[ticker] = (quote, now)
-            return quote
-
-        except requests.exceptions.HTTPError as e:
-            print(f"Warning: FMP HTTP error for {ticker}: {e.response.status_code}")
+        data = self._fmp.quote(ticker)
+        if not data or not isinstance(data, list):
+            print(f"Warning: No quote data for {ticker} from FMP")
             return None
-        except requests.exceptions.Timeout:
-            print(f"Warning: FMP timeout for {ticker}")
+
+        quote_data = data[0]  # FMP returns array with single element
+
+        price = float(quote_data.get("price") or 0)
+        if price <= 0:
+            print(f"Warning: Invalid price for {ticker}: {price}")
             return None
-        except Exception as e:
-            print(f"Warning: FMP error for {ticker}: {type(e).__name__}: {e}")
-            return None
+
+        return {
+            "ticker": ticker,
+            "price": price,
+            "bid": float(quote_data.get("bid") or price * 0.999),
+            "ask": float(quote_data.get("ask") or price * 1.001),
+            "volume": int(quote_data.get("volume") or 0),
+            "market_cap": int(quote_data.get("marketCap") or 0),
+            "change": float(quote_data.get("change") or 0),
+            "change_pct": float(quote_data.get("changesPercentage") or 0),
+            "day_high": float(quote_data.get("dayHigh") or price),
+            "day_low": float(quote_data.get("dayLow") or price),
+            "prev_close": float(quote_data.get("previousClose") or price),
+            "timestamp": quote_data.get("timestamp"),
+            "source": "FMP",
+        }
 
     def get_batch_quotes(self, tickers: List[str]) -> Dict[str, Dict]:
         """
-        Get quotes for multiple stocks using FMP API with concurrent requests.
+        Get quotes for multiple stocks sequentially through the shared client.
 
-        FMP Starter plan doesn't support batch quotes, so we use concurrent
-        individual requests which is still fast (30 stocks in ~4s).
-
-        Performance:
-        - yfinance: 26 stocks = 5-10 seconds (sequential, unreliable)
-        - FMP concurrent: 26 stocks = 3-4 seconds (parallel, reliable)
+        The client's 15-min file cache makes warm scans free; cold fetches are
+        throttled to 1 req/s (quota-safe on the 250-call/day Starter plan).
 
         Args:
             tickers: List of stock tickers
@@ -325,34 +227,15 @@ class HybridDataFetcher:
         Returns:
             Dict mapping ticker to quote data
         """
-        results = {}
-        now = datetime.now()
-
-        # Strip MooMoo prefixes
         clean_tickers = [strip_moomoo_prefix(t) for t in tickers]
+        print(f"   Fetching {len(clean_tickers)} stock quotes via FMP...")
 
-        # Check cache first, collect tickers that need fetching
-        tickers_to_fetch = []
+        results = {}
         for ticker in clean_tickers:
-            if ticker in self._quote_cache:
-                cached_quote, cached_time = self._quote_cache[ticker]
-                if now - cached_time < self._quote_cache_ttl:
-                    results[ticker] = cached_quote
-                    continue
-            tickers_to_fetch.append(ticker)
+            quote = self.get_stock_quote(ticker)
+            if quote:
+                results[ticker] = quote
 
-        if not tickers_to_fetch:
-            print(f"   Using cached quotes for {len(clean_tickers)} stocks")
-            return results
-
-        cached_count = len(clean_tickers) - len(tickers_to_fetch)
-        fetch_msg = f"   Fetching {len(tickers_to_fetch)} stock quotes via FMP"
-        if cached_count > 0:
-            fetch_msg += f" ({cached_count} from cache)"
-        print(fetch_msg + "...")
-
-        # Use concurrent fetches (FMP Starter doesn't support batch endpoint)
-        results.update(self._fetch_quotes_concurrent(tickers_to_fetch))
         print(f"   Retrieved {len(results)}/{len(clean_tickers)} quotes via FMP")
         return results
 

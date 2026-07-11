@@ -3,18 +3,16 @@ Earnings date checker using FMP API exclusively
 Validates that stocks don't have earnings within the trade window
 
 DESIGN PRINCIPLES:
-- FMP API is the ONLY data source (no yfinance, no web scraping)
+- FMP API is the ONLY data source (no yfinance, no web scraping); all HTTP goes
+  through the shared FMPClient (12h cache on /earnings, errors never cached)
 - FAIL-CLOSED by default: missing earnings data => REJECT (never trade blind
   through an unverified earnings window). Override per-run with allow_unverified.
-- 12-hour cache to minimize API calls (FMP 250 calls/day limit)
 """
 
-import requests
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Tuple
-import json
-import os
-from config import FMP_API_KEY
+
+from fmp_client import get_client
 
 
 class EarningsChecker:
@@ -29,61 +27,15 @@ class EarningsChecker:
     endpoint ignores `symbol` and truncates to 4000 rows — unusable).
     """
 
-    def __init__(
-        self, cache_file: str = "./earnings_cache.json", cache_expiry_hours: int = 12
-    ):
+    def __init__(self, cache_expiry_hours: int = 12):
         """
-        Initialize EarningsChecker with FMP API configuration.
-
         Args:
-            cache_file: Path to cache file for earnings dates
-            cache_expiry_hours: Hours before cache entries expire (default: 12)
+            cache_expiry_hours: TTL passed to the shared FMPClient cache (default: 12)
         """
-        self.cache_file = cache_file
         self.cache_expiry_hours = cache_expiry_hours
-        self.cache = self._load_cache()
-        self.fmp_api_key = FMP_API_KEY
-        self.fmp_base_url = "https://financialmodelingprep.com/stable"
+        self._fmp = get_client()
 
-    def _load_cache(self) -> Dict:
-        """Load earnings cache from file."""
-        if os.path.exists(self.cache_file):
-            try:
-                with open(self.cache_file, "r") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError):
-                return {}
-        return {}
-
-    def _save_cache(self):
-        """Save earnings cache to file."""
-        try:
-            with open(self.cache_file, "w") as f:
-                json.dump(self.cache, f, indent=2)
-        except IOError as e:
-            print(f"Warning: Could not save earnings cache: {e}")
-
-    def _is_cache_valid(self, ticker: str) -> bool:
-        """
-        Check if cached earnings data is still valid (not expired).
-
-        Args:
-            ticker: Stock ticker
-
-        Returns:
-            True if cache exists and is <12 hours old
-        """
-        if ticker not in self.cache:
-            return False
-
-        cached_time = datetime.fromisoformat(
-            self.cache[ticker].get("cached_at", "2000-01-01")
-        )
-        expiry_time = cached_time + timedelta(hours=self.cache_expiry_hours)
-
-        return datetime.now() < expiry_time
-
-    def _fetch_symbol_earnings(self, ticker: str) -> Dict:
+    def _fetch_symbol_earnings(self, ticker: str, ttl_hours: float = None) -> Dict:
         """
         Fetch a single symbol's earnings via the per-symbol /stable/earnings endpoint.
 
@@ -95,69 +47,57 @@ class EarningsChecker:
         Returns:
             {'last_earnings': datetime|None, 'next_earnings': datetime|None,
              'status': 'found' | 'not_found' | 'error'}
-            status='error' on any network/HTTP failure (caller fails closed and does
-            NOT cache the result).
+            status='error' on any network/HTTP failure. The shared FMPClient
+            never caches errors, so a quota/network blip cannot stay sticky
+            for the TTL window and keep the feed artificially dark.
         """
-        url = f"{self.fmp_base_url}/earnings"
-        params = {"symbol": ticker, "apikey": self.fmp_api_key}
-        try:
-            response = requests.get(url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json()
+        data = self._fmp.earnings(
+            ticker,
+            ttl_hours=self.cache_expiry_hours if ttl_hours is None else ttl_hours,
+        )
 
-            if not isinstance(data, list) or not data:
-                return {
-                    "last_earnings": None,
-                    "next_earnings": None,
-                    "status": "not_found",
-                }
-
-            today = datetime.now()
-            last_earnings = None  # most recent past date
-            next_earnings = None  # earliest future date
-            for event in data:
-                if (
-                    event.get("symbol") != ticker
-                ):  # defensive; endpoint should pre-filter
-                    continue
-                date_str = event.get("date")
-                if not date_str:
-                    continue
-                try:
-                    dt = datetime.strptime(date_str, "%Y-%m-%d")
-                except ValueError:
-                    continue
-                if dt <= today:
-                    if last_earnings is None or dt > last_earnings:
-                        last_earnings = dt
-                else:
-                    if next_earnings is None or dt < next_earnings:
-                        next_earnings = dt
-
-            return {
-                "last_earnings": last_earnings,
-                "next_earnings": next_earnings,
-                "status": "found",
-            }
-
-        except requests.exceptions.HTTPError as e:
-            print(f"  [WARN] FMP earnings HTTP {e.response.status_code} for {ticker}")
+        if data is None:  # network/HTTP error (not cached by the client)
             return {"last_earnings": None, "next_earnings": None, "status": "error"}
-        except Exception as e:
-            print(
-                f"  [WARN] FMP earnings fetch failed for {ticker}: {type(e).__name__}: {e}"
-            )
-            return {"last_earnings": None, "next_earnings": None, "status": "error"}
+
+        if not isinstance(data, list) or not data:
+            return {"last_earnings": None, "next_earnings": None, "status": "not_found"}
+
+        today = datetime.now()
+        last_earnings = None  # most recent past date
+        next_earnings = None  # earliest future date
+        for event in data:
+            if event.get("symbol") != ticker:  # defensive; endpoint should pre-filter
+                continue
+            date_str = event.get("date")
+            if not date_str:
+                continue
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                continue
+            if dt <= today:
+                if last_earnings is None or dt > last_earnings:
+                    last_earnings = dt
+            else:
+                if next_earnings is None or dt < next_earnings:
+                    next_earnings = dt
+
+        return {
+            "last_earnings": last_earnings,
+            "next_earnings": next_earnings,
+            "status": "found",
+        }
 
     def get_earnings_info(self, ticker: str, use_cache: bool = True) -> Dict:
         """
         Get earnings information for a ticker using FMP API.
 
-        Returns both last and next earnings dates when available.
+        Caching lives in the shared FMPClient (12h TTL on the raw /earnings
+        response); this method just parses dates out of it.
 
         Args:
             ticker: Stock ticker (e.g., 'AAPL')
-            use_cache: Whether to use cached data if available (default: True)
+            use_cache: If False, bypass the client cache and force a live fetch
 
         Returns:
             Dict with:
@@ -165,45 +105,7 @@ class EarningsChecker:
             - 'next_earnings': datetime or None (earliest future date)
             - 'status': 'found', 'not_found', or 'error'
         """
-        # Check per-ticker cache first
-        if use_cache and self._is_cache_valid(ticker):
-            cached = self.cache[ticker]
-            result = {
-                "last_earnings": None,
-                "next_earnings": None,
-                "status": cached.get("status", "found"),
-            }
-            if cached.get("last_earnings"):
-                result["last_earnings"] = datetime.fromisoformat(
-                    cached["last_earnings"]
-                )
-            if cached.get("next_earnings"):
-                result["next_earnings"] = datetime.fromisoformat(
-                    cached["next_earnings"]
-                )
-            return result
-
-        # Fetch this symbol's earnings (per-symbol endpoint actually filters by symbol,
-        # unlike the bulk earnings-calendar which ignores `symbol` and truncates to 4000 rows).
-        info = self._fetch_symbol_earnings(ticker)
-
-        # Never cache a transient error: a quota/network blip must not stay sticky for
-        # the 12h TTL and keep the feed artificially dark.
-        if info["status"] != "error":
-            self.cache[ticker] = {
-                "last_earnings": info["last_earnings"].isoformat()
-                if info["last_earnings"]
-                else None,
-                "next_earnings": info["next_earnings"].isoformat()
-                if info["next_earnings"]
-                else None,
-                "cached_at": datetime.now().isoformat(),
-                "source": "FMP",
-                "status": info["status"],
-            }
-            self._save_cache()
-
-        return info
+        return self._fetch_symbol_earnings(ticker, ttl_hours=None if use_cache else 0)
 
     def get_next_earnings_date(
         self, ticker: str, use_cache: bool = True
@@ -333,13 +235,6 @@ class EarningsChecker:
                 None,
                 "REJECTED - earnings date unavailable (strict mode enabled)",
             )
-
-    def clear_cache(self):
-        """Clear the earnings cache."""
-        self.cache = {}
-        if os.path.exists(self.cache_file):
-            os.remove(self.cache_file)
-        print("Earnings cache cleared")
 
 
 # =============================================================================

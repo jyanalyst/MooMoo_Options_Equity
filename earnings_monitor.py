@@ -19,30 +19,28 @@ Usage:
     python earnings_monitor.py --console    # Console output only (no CSV)
 """
 
-import os
 import sys
 import logging
 import csv
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
-import requests
+from typing import List, Dict, Optional
 
-# Import universe and config
-from universe import WHEEL_UNIVERSE, CAPITAL_REQUIREMENTS, STOCK_METADATA, get_stock_metadata
-from config import FMP_API_KEY
+# Import universe and shared earnings fetch (one FMP path, fail-closed)
+from earnings_checker import EarningsChecker
+from universe import WHEEL_UNIVERSE, get_stock_metadata
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
 # Output directory
-REPORTS_DIR = Path(__file__).parent / 'reports' / 'earnings'
+REPORTS_DIR = Path(__file__).parent / "reports" / "earnings"
 
 # Earnings categorization thresholds (days)
-AVOID_THRESHOLD = 14    # <14 days = AVOID
+AVOID_THRESHOLD = 14  # <14 days = AVOID
 CAUTION_THRESHOLD = 30  # 14-30 days = CAUTION
-CALENDAR_HORIZON = 45   # Look ahead 45 days
+CALENDAR_HORIZON = 45  # Look ahead 45 days
 
 # Retention policy
 RETENTION_DAYS = 70  # Keep reports for 10 weeks
@@ -50,8 +48,8 @@ RETENTION_DAYS = 70  # Keep reports for 10 weeks
 # Logging configuration
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -60,9 +58,18 @@ logger = logging.getLogger(__name__)
 # FMP API FUNCTIONS
 # =============================================================================
 
+
+# One shared checker: same FMP fetch + client cache as the scan-time safety
+# check, so the weekly CSV and the scanner can never disagree about the data.
+_checker = EarningsChecker()
+
+
 def fetch_earnings_for_ticker(ticker: str) -> Optional[str]:
     """
-    Fetch next FUTURE earnings date for a single ticker using FMP stable API.
+    Fetch next FUTURE earnings date for a single ticker.
+
+    Delegates to EarningsChecker (shared FMPClient: 12h cache, errors never
+    cached). Fail-closed semantics preserved: None when nothing verifiable.
 
     Args:
         ticker: Stock ticker symbol
@@ -70,58 +77,22 @@ def fetch_earnings_for_ticker(ticker: str) -> Optional[str]:
     Returns:
         Earnings date string (YYYY-MM-DD) or None if not found/no future earnings
     """
-    # Per-symbol endpoint: /stable/earnings actually filters by symbol. The bulk
-    # /earnings-calendar endpoint does NOT (it ignores `symbol` and caps at 4000 rows),
-    # which silently dropped almost every name and produced the dark "all SAFE" feed.
-    url = "https://financialmodelingprep.com/stable/earnings"
-    params = {
-        'symbol': ticker,
-        'apikey': FMP_API_KEY
-    }
-
-    today = datetime.now().date()
-
-    try:
-        response = requests.get(url, params=params, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-
-        if isinstance(data, list) and data:
-            # Earliest FUTURE earnings date for THIS ticker
-            future_dates = []
-            for event in data:
-                if event.get('symbol') != ticker:   # defensive; endpoint pre-filters
-                    continue
-                date_str = event.get('date')
-                if not date_str:
-                    continue
-                try:
-                    earnings_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                except ValueError:
-                    continue
-                if earnings_date > today:
-                    future_dates.append(date_str)
-            return min(future_dates) if future_dates else None
-        return None
-
-    except Exception as e:
-        logger.debug(f"Error fetching earnings for {ticker}: {e}")
-        return None
+    info = _checker.get_earnings_info(ticker)
+    next_earnings = info.get("next_earnings")
+    return next_earnings.strftime("%Y-%m-%d") if next_earnings else None
 
 
-def fetch_earnings_batch(tickers: List[str], delay: float = 0.5) -> Dict[str, str]:
+def fetch_earnings_batch(tickers: List[str]) -> Dict[str, str]:
     """
-    Fetch earnings dates for multiple tickers with rate limiting.
+    Fetch earnings dates for multiple tickers (the shared FMPClient enforces
+    the 1 req/s throttle; cached responses are free).
 
     Args:
         tickers: List of ticker symbols
-        delay: Delay between API calls (seconds)
 
     Returns:
         Dict mapping ticker -> earnings date string
     """
-    import time
-
     earnings_map: Dict[str, str] = {}
     total = len(tickers)
 
@@ -135,9 +106,6 @@ def fetch_earnings_batch(tickers: List[str], delay: float = 0.5) -> Dict[str, st
         if date:
             earnings_map[ticker] = date
 
-        if i < total:
-            time.sleep(delay)
-
     logger.info(f"Found earnings dates for {len(earnings_map)}/{total} tickers")
     return earnings_map
 
@@ -145,6 +113,7 @@ def fetch_earnings_batch(tickers: List[str], delay: float = 0.5) -> Dict[str, st
 # =============================================================================
 # CATEGORIZATION LOGIC
 # =============================================================================
+
 
 def categorize_earnings(universe: List[str]) -> List[Dict]:
     """
@@ -158,18 +127,24 @@ def categorize_earnings(universe: List[str]) -> List[Dict]:
     """
     today = datetime.now()
 
-    print(f"\n   Scanning earnings from {today.strftime('%Y-%m-%d')} to {(today + timedelta(days=CALENDAR_HORIZON)).strftime('%Y-%m-%d')}...")
+    print(
+        f"\n   Scanning earnings from {today.strftime('%Y-%m-%d')} to {(today + timedelta(days=CALENDAR_HORIZON)).strftime('%Y-%m-%d')}..."
+    )
 
     # Fetch earnings for each ticker
-    universe_earnings = fetch_earnings_batch(universe, delay=0.5)
+    universe_earnings = fetch_earnings_batch(universe)
 
     # Fail-closed feed check: zero coverage across the whole universe means the FMP feed
     # is down (quota/key/endpoint), NOT that every stock is earnings-free. Warn loudly so
     # a dark feed is never mistaken for "all clear".
     if universe and len(universe_earnings) == 0:
         print("\n   [ERROR] FMP returned ZERO earnings dates for the entire universe.")
-        print("           Feed is down (likely 250/day quota exhausted, bad key, or endpoint).")
-        print("           ALL names will be marked UNVERIFIED - do NOT trade off this report.")
+        print(
+            "           Feed is down (likely 250/day quota exhausted, bad key, or endpoint)."
+        )
+        print(
+            "           ALL names will be marked UNVERIFIED - do NOT trade off this report."
+        )
 
     # Build full dataset with metadata
     results = []
@@ -180,60 +155,66 @@ def categorize_earnings(universe: List[str]) -> List[Dict]:
         if ticker in universe_earnings:
             date_str = universe_earnings[ticker]
             try:
-                earnings_date = datetime.strptime(date_str, '%Y-%m-%d')
+                earnings_date = datetime.strptime(date_str, "%Y-%m-%d")
                 days_away = (earnings_date - today).days
 
                 # Determine status
                 if days_away < AVOID_THRESHOLD:
-                    status = 'AVOID'
-                    notes = 'Earnings within 14-day buffer - DO NOT open new CSPs'
+                    status = "AVOID"
+                    notes = "Earnings within 14-day buffer - DO NOT open new CSPs"
                 elif days_away < CAUTION_THRESHOLD:
-                    status = 'CAUTION'
-                    notes = 'Monitor closely - may enter AVOID zone'
+                    status = "CAUTION"
+                    notes = "Monitor closely - may enter AVOID zone"
                 else:
-                    status = 'SAFE'
-                    notes = 'Clear to trade'
+                    status = "SAFE"
+                    notes = "Clear to trade"
 
-                results.append({
-                    'ticker': ticker,
-                    'company': metadata['company'],
-                    'sector': metadata['sector'],
-                    'quality_score': metadata['quality_score'],
-                    'capital_required': metadata['capital_required'],
-                    'earnings_date': date_str,
-                    'days_away': days_away,
-                    'status': status,
-                    'notes': notes
-                })
+                results.append(
+                    {
+                        "ticker": ticker,
+                        "company": metadata["company"],
+                        "sector": metadata["sector"],
+                        "quality_score": metadata["quality_score"],
+                        "capital_required": metadata["capital_required"],
+                        "earnings_date": date_str,
+                        "days_away": days_away,
+                        "status": status,
+                        "notes": notes,
+                    }
+                )
 
             except ValueError:
-                results.append({
-                    'ticker': ticker,
-                    'company': metadata['company'],
-                    'sector': metadata['sector'],
-                    'quality_score': metadata['quality_score'],
-                    'capital_required': metadata['capital_required'],
-                    'earnings_date': date_str,
-                    'days_away': '',
-                    'status': 'UNVERIFIED',
-                    'notes': f'UNVERIFIED - invalid date from FMP ({date_str}); verify manually'
-                })
+                results.append(
+                    {
+                        "ticker": ticker,
+                        "company": metadata["company"],
+                        "sector": metadata["sector"],
+                        "quality_score": metadata["quality_score"],
+                        "capital_required": metadata["capital_required"],
+                        "earnings_date": date_str,
+                        "days_away": "",
+                        "status": "UNVERIFIED",
+                        "notes": f"UNVERIFIED - invalid date from FMP ({date_str}); verify manually",
+                    }
+                )
         else:
             # No date returned. This is AMBIGUOUS - it means either "no earnings in the
             # horizon" OR "FMP fetch failed/empty". We cannot tell them apart, so we
             # FAIL CLOSED: never fabricate SAFE from absent data (a name with earnings in
             # the window would otherwise pass the hard earnings disqualifier).
-            results.append({
-                'ticker': ticker,
-                'company': metadata['company'],
-                'sector': metadata['sector'],
-                'quality_score': metadata['quality_score'],
-                'capital_required': metadata['capital_required'],
-                'earnings_date': '',
-                'days_away': '',
-                'status': 'UNVERIFIED',
-                'notes': 'UNVERIFIED - no date returned by FMP; verify manually before trading'
-            })
+            results.append(
+                {
+                    "ticker": ticker,
+                    "company": metadata["company"],
+                    "sector": metadata["sector"],
+                    "quality_score": metadata["quality_score"],
+                    "capital_required": metadata["capital_required"],
+                    "earnings_date": "",
+                    "days_away": "",
+                    "status": "UNVERIFIED",
+                    "notes": "UNVERIFIED - no date returned by FMP; verify manually before trading",
+                }
+            )
 
     return results
 
@@ -241,6 +222,7 @@ def categorize_earnings(universe: List[str]) -> List[Dict]:
 # =============================================================================
 # CSV EXPORT
 # =============================================================================
+
 
 def export_to_csv(data: List[Dict], report_date: str) -> Path:
     """
@@ -260,18 +242,18 @@ def export_to_csv(data: List[Dict], report_date: str) -> Path:
     filepath = REPORTS_DIR / filename
 
     fieldnames = [
-        'ticker',
-        'company',
-        'sector',
-        'quality_score',
-        'capital_required',
-        'earnings_date',
-        'days_away',
-        'status',
-        'notes'
+        "ticker",
+        "company",
+        "sector",
+        "quality_score",
+        "capital_required",
+        "earnings_date",
+        "days_away",
+        "status",
+        "notes",
     ]
 
-    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+    with open(filepath, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(data)
@@ -284,65 +266,73 @@ def export_to_csv(data: List[Dict], report_date: str) -> Path:
 # CONSOLE OUTPUT
 # =============================================================================
 
+
 def print_summary(data: List[Dict]):
     """
     Print color-coded console summary.
     """
-    avoid = [d for d in data if d['status'] == 'AVOID']
-    caution = [d for d in data if d['status'] == 'CAUTION']
-    unverified = [d for d in data if d['status'] == 'UNVERIFIED']
-    safe = [d for d in data if d['status'] == 'SAFE']
+    avoid = [d for d in data if d["status"] == "AVOID"]
+    caution = [d for d in data if d["status"] == "CAUTION"]
+    unverified = [d for d in data if d["status"] == "UNVERIFIED"]
+    safe = [d for d in data if d["status"] == "SAFE"]
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("EARNINGS CALENDAR SUMMARY")
-    print("="*70)
+    print("=" * 70)
 
     # AVOID section
     print(f"\n   AVOID NEW CSPs ({len(avoid)} stocks)")
     if avoid:
-        print("   " + "-"*50)
+        print("   " + "-" * 50)
         print(f"   {'Ticker':<8} {'Date':<12} {'Days':>5}  {'Sector':<20}")
-        print("   " + "-"*50)
-        for stock in sorted(avoid, key=lambda x: x.get('days_away', 999)):
-            days = stock.get('days_away', 'N/A')
-            print(f"   {stock['ticker']:<8} {stock['earnings_date']:<12} {days:>5}  {stock['sector']:<20}")
+        print("   " + "-" * 50)
+        for stock in sorted(avoid, key=lambda x: x.get("days_away", 999)):
+            days = stock.get("days_away", "N/A")
+            print(
+                f"   {stock['ticker']:<8} {stock['earnings_date']:<12} {days:>5}  {stock['sector']:<20}"
+            )
     else:
         print("   All clear - no earnings <14 days!")
 
     # CAUTION section
     print(f"\n   CAUTION ({len(caution)} stocks)")
     if caution:
-        print("   " + "-"*50)
+        print("   " + "-" * 50)
         print(f"   {'Ticker':<8} {'Date':<12} {'Days':>5}  {'Sector':<20}")
-        print("   " + "-"*50)
-        for stock in sorted(caution, key=lambda x: x.get('days_away', 999)):
-            days = stock.get('days_away', 'N/A')
-            print(f"   {stock['ticker']:<8} {stock['earnings_date']:<12} {days:>5}  {stock['sector']:<20}")
+        print("   " + "-" * 50)
+        for stock in sorted(caution, key=lambda x: x.get("days_away", 999)):
+            days = stock.get("days_away", "N/A")
+            print(
+                f"   {stock['ticker']:<8} {stock['earnings_date']:<12} {days:>5}  {stock['sector']:<20}"
+            )
     else:
         print("   None")
 
     # UNVERIFIED section - treat as DO NOT TRADE until manually confirmed
-    print(f"\n   UNVERIFIED - earnings unknown, DO NOT TRADE without manual check ({len(unverified)} stocks)")
+    print(
+        f"\n   UNVERIFIED - earnings unknown, DO NOT TRADE without manual check ({len(unverified)} stocks)"
+    )
     if unverified:
-        unverified_tickers = [s['ticker'] for s in unverified]
+        unverified_tickers = [s["ticker"] for s in unverified]
         for i in range(0, len(unverified_tickers), 10):
-            print(f"   {', '.join(unverified_tickers[i:i+10])}")
+            print(f"   {', '.join(unverified_tickers[i : i + 10])}")
     else:
         print("   None - all names have confirmed earnings data")
 
     # SAFE section
     print(f"\n   SAFE TO TRADE ({len(safe)} stocks)")
-    safe_tickers = [s['ticker'] for s in safe]
+    safe_tickers = [s["ticker"] for s in safe]
     # Print in rows of 10
     for i in range(0, len(safe_tickers), 10):
-        print(f"   {', '.join(safe_tickers[i:i+10])}")
+        print(f"   {', '.join(safe_tickers[i : i + 10])}")
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
 
 
 # =============================================================================
 # CLEANUP
 # =============================================================================
+
 
 def cleanup_old_reports():
     """
@@ -357,11 +347,11 @@ def cleanup_old_reports():
     cutoff_date = datetime.now() - timedelta(days=RETENTION_DAYS)
     deleted_count = 0
 
-    for filepath in REPORTS_DIR.glob('earnings_calendar_*.csv'):
+    for filepath in REPORTS_DIR.glob("earnings_calendar_*.csv"):
         try:
             # Parse date from filename: earnings_calendar_YYYY-MM-DD.csv
-            date_str = filepath.stem.replace('earnings_calendar_', '')
-            file_date = datetime.strptime(date_str, '%Y-%m-%d')
+            date_str = filepath.stem.replace("earnings_calendar_", "")
+            file_date = datetime.strptime(date_str, "%Y-%m-%d")
 
             if file_date < cutoff_date:
                 filepath.unlink()
@@ -381,6 +371,7 @@ def cleanup_old_reports():
 # MAIN EXECUTION
 # =============================================================================
 
+
 def run_monitor(console_only: bool = False) -> Dict:
     """
     Run the earnings monitor.
@@ -391,12 +382,12 @@ def run_monitor(console_only: bool = False) -> Dict:
     Returns:
         Dict with results
     """
-    report_date = datetime.now().strftime('%Y-%m-%d')
+    report_date = datetime.now().strftime("%Y-%m-%d")
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print(f"EARNINGS CALENDAR MONITOR - {report_date}")
     print(f"Universe: {len(WHEEL_UNIVERSE)} stocks")
-    print("="*70)
+    print("=" * 70)
 
     # Categorize earnings
     data = categorize_earnings(WHEEL_UNIVERSE)
@@ -414,16 +405,16 @@ def run_monitor(console_only: bool = False) -> Dict:
 
     if filepath:
         print(f"\n   Report saved: {filepath}")
-        print(f"   Use this file when journaling trades to document earnings proximity")
+        print("   Use this file when journaling trades to document earnings proximity")
 
-    print("\n" + "="*70 + "\n")
+    print("\n" + "=" * 70 + "\n")
 
     return {
-        'data': data,
-        'filepath': filepath,
-        'avoid_count': len([d for d in data if d['status'] == 'AVOID']),
-        'caution_count': len([d for d in data if d['status'] == 'CAUTION']),
-        'safe_count': len([d for d in data if d['status'] == 'SAFE'])
+        "data": data,
+        "filepath": filepath,
+        "avoid_count": len([d for d in data if d["status"] == "AVOID"]),
+        "caution_count": len([d for d in data if d["status"] == "CAUTION"]),
+        "safe_count": len([d for d in data if d["status"] == "SAFE"]),
     }
 
 
@@ -432,17 +423,15 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Earnings Calendar Monitor - CSV Export Version'
+        description="Earnings Calendar Monitor - CSV Export Version"
     )
     parser.add_argument(
-        '--cleanup',
-        action='store_true',
-        help='Remove old reports only (no new report generated)'
+        "--cleanup",
+        action="store_true",
+        help="Remove old reports only (no new report generated)",
     )
     parser.add_argument(
-        '--console',
-        action='store_true',
-        help='Console output only (no CSV export)'
+        "--console", action="store_true", help="Console output only (no CSV export)"
     )
 
     args = parser.parse_args()
