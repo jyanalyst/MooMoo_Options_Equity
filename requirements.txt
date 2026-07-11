@@ -1,23 +1,18 @@
 # Options Scanner Dependencies
 
-# MooMoo API (requires OpenD running locally)
-moomoo-api>=9.6.0
+# MooMoo API (requires OpenD running locally; v10.7+ for Fundamentals/Screener APIs)
+moomoo-api>=10.7
 
-# Interactive Brokers API (requires IB Gateway/TWS running locally)
-# Used by main_ibkr.py / ibkr_data_fetcher.py as an alternative options-data source
-ib_async>=2.0.0
+# HTTP (FMP API client)
+requests>=2.31
 
 # Data manipulation
 pandas>=1.5.0
 numpy>=1.21.0
 
-# Earnings data
+# Historical prices / IV
 yfinance>=0.2.0
 
-# Fundamental screening
-finvizfinance>=0.14.0
-
-# Optional: For enhanced output (already in standard library)
-# csv (built-in)
-# json (built-in)
-# datetime (built-in)
+# Dev / test (optional):
+# pytest>=7.0
+# hypothesis>=6.0

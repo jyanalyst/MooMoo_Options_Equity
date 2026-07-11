@@ -60,29 +60,6 @@ MOOMOO_PORT = 11111
 API_DELAY_SECONDS = 3
 
 # =============================================================================
-# INTERACTIVE BROKERS (IBKR) API SETTINGS
-# =============================================================================
-# Alternative options-data source used by main_ibkr.py / ibkr_data_fetcher.py.
-# Requires IB Gateway (or TWS) running locally and an OPRA market-data
-# subscription for live option Greeks. Stock quotes still come from FMP and
-# historical prices from yfinance — only the options chain moves to IBKR.
-IBKR_HOST = "127.0.0.1"
-IBKR_PORT = 4001  # configured Gateway API socket (paper/live is set by the Gateway
-# login, NOT the port; IBKR defaults: Gateway 4001/4002, TWS 7496/7497).
-# This machine's Gateway serves account U13380098 on 4001.
-IBKR_CLIENT_ID = 11  # any unique integer per concurrent API client
-# 1=live (needs OPRA), 2=frozen, 3=delayed (free), 4=delayed-frozen.
-# LIVE-ONLY by design: OPRA is subscribed on U13380098 and delayed quotes are
-# stale/wide (junk after-hours), so IBKRDataFetcher never falls back to delayed.
-# If the live feed yields no Greeks for a stock (market closed, or a subscription
-# gap), that stock is skipped with a warning rather than filled with delayed data.
-IBKR_MARKET_DATA_TYPE = 1
-# Strike band (fraction of spot) to request per expiration when building a PUT
-# chain — keeps simultaneous market-data lines well under IBKR's ~100 limit.
-IBKR_PUT_STRIKE_BAND = (0.70, 1.02)
-IBKR_MAX_STRIKES = 30  # cap strikes requested per chain (nearest to spot)
-
-# =============================================================================
 # WHEEL STRATEGY PARAMETERS
 # =============================================================================
 
@@ -138,76 +115,6 @@ EARNINGS_CONFIG = {
 MANUAL_TICKERS = [
     "TQQQ",  # 3x Leveraged Nasdaq-100 ETF - HIGH RISK, no earnings
 ]
-
-# =============================================================================
-# HIGH-LIQUIDITY OPTIONS TICKERS
-# Stocks with consistently tight bid-ask spreads (<20%) and deep options markets
-# Use --liquid-only flag to scan only these names for faster, cleaner results
-# =============================================================================
-
-HIGH_LIQUIDITY_TICKERS = [
-    # === MEGA-CAP ETFs (Highest Liquidity) ===
-    "SPY",  # S&P 500 ETF - King of options liquidity
-    "QQQ",  # Nasdaq-100 ETF - Tech options powerhouse
-    "IWM",  # Russell 2000 ETF - Small cap exposure
-    "DIA",  # Dow Jones ETF
-    "EEM",  # Emerging Markets ETF
-    "GLD",  # Gold ETF
-    "TLT",  # 20-Year Treasury ETF
-    "XLF",  # Financials ETF
-    "XLE",  # Energy ETF
-    # === MEGA-CAP TECH (Active Options, Tight Spreads) ===
-    "AAPL",  # Apple - Most liquid single-stock options
-    "MSFT",  # Microsoft - Enterprise tech giant
-    "GOOGL",  # Alphabet - Search/cloud leader
-    "AMZN",  # Amazon - E-commerce/AWS
-    "NVDA",  # Nvidia - AI/GPU leader
-    "META",  # Meta - Social media giant
-    "TSLA",  # Tesla - High IV, active options
-    # === LARGE-CAP TECH (Good Liquidity) ===
-    "AMD",  # Advanced Micro Devices
-    "INTC",  # Intel
-    "NFLX",  # Netflix
-    "AVGO",  # Broadcom
-    "CRM",  # Salesforce
-    "ORCL",  # Oracle
-    "ADBE",  # Adobe
-    # === LARGE-CAP FINANCE ===
-    "JPM",  # JPMorgan Chase
-    "BAC",  # Bank of America
-    "WFC",  # Wells Fargo
-    "GS",  # Goldman Sachs
-    "MS",  # Morgan Stanley
-    "C",  # Citigroup
-    "V",  # Visa
-    "MA",  # Mastercard
-    # === LARGE-CAP HEALTHCARE ===
-    "UNH",  # UnitedHealth
-    "JNJ",  # Johnson & Johnson
-    "PFE",  # Pfizer
-    "ABBV",  # AbbVie
-    "MRK",  # Merck
-    "LLY",  # Eli Lilly
-    # === LARGE-CAP CONSUMER ===
-    "WMT",  # Walmart
-    "HD",  # Home Depot
-    "MCD",  # McDonald's
-    "DIS",  # Disney
-    "NKE",  # Nike
-    "SBUX",  # Starbucks
-    # === HIGH-VOLATILITY NAMES (Wide spreads acceptable due to premium) ===
-    "COIN",  # Coinbase - Crypto exposure
-    "RIVN",  # Rivian - EV play
-    "PLTR",  # Palantir - AI/defense
-    "SOFI",  # SoFi - Fintech
-]
-
-# Rationale for Liquid-Only List:
-# - Daily options volume >50,000 contracts
-# - Open interest >100,000 contracts
-# - Bid-ask spreads typically <20% (vs. 50%+ for low-liquidity names)
-# - Active market makers during US trading hours
-# - Institutional-grade execution quality
 
 # =============================================================================
 # POSITION SIZING (Reference only - not used in scanner logic)
