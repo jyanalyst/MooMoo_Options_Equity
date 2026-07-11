@@ -30,6 +30,8 @@ Usage:
 """
 
 import argparse
+import glob
+import os
 import shutil
 import sys
 from datetime import datetime
@@ -463,6 +465,13 @@ def write_universe_file(content: str, output_path: str, backup: bool = True):
             print(f"[OK] Backup created: {backup_path}")
         except FileNotFoundError:
             print("[WARN] No existing universe.py to backup")
+
+        # Keep only the 2 newest backups (timestamped names sort chronologically)
+        for stale in sorted(glob.glob("universe.py.backup.*"))[:-2]:
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)

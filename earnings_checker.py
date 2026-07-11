@@ -4,14 +4,14 @@ Validates that stocks don't have earnings within the trade window
 
 DESIGN PRINCIPLES:
 - FMP API is the ONLY data source (no yfinance, no web scraping)
-- Missing earnings data triggers WARNING, not rejection
-- User is responsible for manual verification when data unavailable
+- FAIL-CLOSED by default: missing earnings data => REJECT (never trade blind
+  through an unverified earnings window). Override per-run with allow_unverified.
 - 12-hour cache to minimize API calls (FMP 250 calls/day limit)
 """
 
 import requests
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Tuple, List
+from typing import Optional, Dict, Tuple
 import json
 import os
 from config import FMP_API_KEY
@@ -21,14 +21,17 @@ class EarningsChecker:
     """
     Check earnings dates using FMP API exclusively.
 
-    Fail-open design: If FMP data unavailable, allows trade with warning
-    rather than rejecting (user must manually verify).
+    FAIL-CLOSED design: if FMP data is unavailable the stock is REJECTED
+    (allow_unverified=False default). An UNVERIFIED name must never silently
+    look like a confirmed SAFE one.
 
-    Note: FMP's earnings-calendar endpoint returns ALL stocks' earnings.
-    We fetch the full calendar once and cache it, then filter locally by ticker.
+    Uses the per-symbol /stable/earnings endpoint (the bulk earnings-calendar
+    endpoint ignores `symbol` and truncates to 4000 rows — unusable).
     """
 
-    def __init__(self, cache_file: str = "./earnings_cache.json", cache_expiry_hours: int = 12):
+    def __init__(
+        self, cache_file: str = "./earnings_cache.json", cache_expiry_hours: int = 12
+    ):
         """
         Initialize EarningsChecker with FMP API configuration.
 
@@ -42,15 +45,11 @@ class EarningsChecker:
         self.fmp_api_key = FMP_API_KEY
         self.fmp_base_url = "https://financialmodelingprep.com/stable"
 
-        # Full calendar cache (separate from per-ticker cache)
-        self._calendar_cache = None
-        self._calendar_fetched_at = None
-
     def _load_cache(self) -> Dict:
         """Load earnings cache from file."""
         if os.path.exists(self.cache_file):
             try:
-                with open(self.cache_file, 'r') as f:
+                with open(self.cache_file, "r") as f:
                     return json.load(f)
             except (json.JSONDecodeError, IOError):
                 return {}
@@ -59,7 +58,7 @@ class EarningsChecker:
     def _save_cache(self):
         """Save earnings cache to file."""
         try:
-            with open(self.cache_file, 'w') as f:
+            with open(self.cache_file, "w") as f:
                 json.dump(self.cache, f, indent=2)
         except IOError as e:
             print(f"Warning: Could not save earnings cache: {e}")
@@ -77,101 +76,12 @@ class EarningsChecker:
         if ticker not in self.cache:
             return False
 
-        cached_time = datetime.fromisoformat(self.cache[ticker].get("cached_at", "2000-01-01"))
+        cached_time = datetime.fromisoformat(
+            self.cache[ticker].get("cached_at", "2000-01-01")
+        )
         expiry_time = cached_time + timedelta(hours=self.cache_expiry_hours)
 
         return datetime.now() < expiry_time
-
-    def _fetch_full_calendar(self) -> Dict[str, Dict]:
-        """
-        DEPRECATED — do not use. The bulk /earnings-calendar endpoint ignores `symbol`
-        and truncates to 4000 rows, so it silently drops most tickers and misses
-        near-term dates (this caused the "all UNVERIFIED" dark feed). Use the per-symbol
-        _fetch_symbol_earnings() instead. Retained only for reference.
-
-        Fetch the full earnings calendar from FMP and index by ticker.
-        We fetch once and cache in memory, then look up individual tickers.
-
-        Returns:
-            Dict mapping ticker -> {
-                'last_earnings': datetime or None (most recent past date),
-                'next_earnings': datetime or None (earliest future date)
-            }
-        """
-        # Check if we have a recent calendar in memory
-        if self._calendar_cache is not None and self._calendar_fetched_at is not None:
-            age = datetime.now() - self._calendar_fetched_at
-            if age < timedelta(hours=self.cache_expiry_hours):
-                return self._calendar_cache
-
-        print("  [FMP] Fetching full earnings calendar...")
-
-        try:
-            # Fetch without date filter to get both past and future earnings
-            url = f"{self.fmp_base_url}/earnings-calendar"
-            params = {
-                'apikey': self.fmp_api_key
-            }
-
-            response = requests.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            data = response.json()
-
-            if not data or not isinstance(data, list):
-                print("  [WARN] FMP returned empty earnings calendar")
-                self._calendar_cache = {}
-                self._calendar_fetched_at = datetime.now()
-                return {}
-
-            # Index by ticker - track both past and future dates
-            calendar = {}
-            today_date = datetime.now().date()
-
-            for event in data:
-                ticker = event.get('symbol')
-                date_str = event.get('date')
-
-                if not ticker or not date_str:
-                    continue
-
-                try:
-                    earnings_dt = datetime.strptime(date_str, '%Y-%m-%d')
-
-                    if ticker not in calendar:
-                        calendar[ticker] = {
-                            'last_earnings': None,
-                            'next_earnings': None
-                        }
-
-                    if earnings_dt.date() <= today_date:
-                        # Past earnings - keep most recent
-                        if (calendar[ticker]['last_earnings'] is None or
-                            earnings_dt > calendar[ticker]['last_earnings']):
-                            calendar[ticker]['last_earnings'] = earnings_dt
-                    else:
-                        # Future earnings - keep earliest
-                        if (calendar[ticker]['next_earnings'] is None or
-                            earnings_dt < calendar[ticker]['next_earnings']):
-                            calendar[ticker]['next_earnings'] = earnings_dt
-
-                except ValueError:
-                    continue
-
-            print(f"  [FMP] Indexed earnings for {len(calendar)} stocks")
-
-            self._calendar_cache = calendar
-            self._calendar_fetched_at = datetime.now()
-            return calendar
-
-        except requests.exceptions.HTTPError as e:
-            print(f"  [WARN] FMP HTTP error fetching calendar: {e.response.status_code}")
-            return {}
-        except requests.exceptions.Timeout:
-            print("  [WARN] FMP calendar fetch timeout")
-            return {}
-        except Exception as e:
-            print(f"  [ERROR] FMP calendar fetch failed: {type(e).__name__}: {e}")
-            return {}
 
     def _fetch_symbol_earnings(self, ticker: str) -> Dict:
         """
@@ -189,26 +99,32 @@ class EarningsChecker:
             NOT cache the result).
         """
         url = f"{self.fmp_base_url}/earnings"
-        params = {'symbol': ticker, 'apikey': self.fmp_api_key}
+        params = {"symbol": ticker, "apikey": self.fmp_api_key}
         try:
             response = requests.get(url, params=params, timeout=15)
             response.raise_for_status()
             data = response.json()
 
             if not isinstance(data, list) or not data:
-                return {'last_earnings': None, 'next_earnings': None, 'status': 'not_found'}
+                return {
+                    "last_earnings": None,
+                    "next_earnings": None,
+                    "status": "not_found",
+                }
 
             today = datetime.now()
-            last_earnings = None   # most recent past date
-            next_earnings = None   # earliest future date
+            last_earnings = None  # most recent past date
+            next_earnings = None  # earliest future date
             for event in data:
-                if event.get('symbol') != ticker:   # defensive; endpoint should pre-filter
+                if (
+                    event.get("symbol") != ticker
+                ):  # defensive; endpoint should pre-filter
                     continue
-                date_str = event.get('date')
+                date_str = event.get("date")
                 if not date_str:
                     continue
                 try:
-                    dt = datetime.strptime(date_str, '%Y-%m-%d')
+                    dt = datetime.strptime(date_str, "%Y-%m-%d")
                 except ValueError:
                     continue
                 if dt <= today:
@@ -218,14 +134,20 @@ class EarningsChecker:
                     if next_earnings is None or dt < next_earnings:
                         next_earnings = dt
 
-            return {'last_earnings': last_earnings, 'next_earnings': next_earnings, 'status': 'found'}
+            return {
+                "last_earnings": last_earnings,
+                "next_earnings": next_earnings,
+                "status": "found",
+            }
 
         except requests.exceptions.HTTPError as e:
             print(f"  [WARN] FMP earnings HTTP {e.response.status_code} for {ticker}")
-            return {'last_earnings': None, 'next_earnings': None, 'status': 'error'}
+            return {"last_earnings": None, "next_earnings": None, "status": "error"}
         except Exception as e:
-            print(f"  [WARN] FMP earnings fetch failed for {ticker}: {type(e).__name__}: {e}")
-            return {'last_earnings': None, 'next_earnings': None, 'status': 'error'}
+            print(
+                f"  [WARN] FMP earnings fetch failed for {ticker}: {type(e).__name__}: {e}"
+            )
+            return {"last_earnings": None, "next_earnings": None, "status": "error"}
 
     def get_earnings_info(self, ticker: str, use_cache: bool = True) -> Dict:
         """
@@ -247,14 +169,18 @@ class EarningsChecker:
         if use_cache and self._is_cache_valid(ticker):
             cached = self.cache[ticker]
             result = {
-                'last_earnings': None,
-                'next_earnings': None,
-                'status': cached.get('status', 'found')
+                "last_earnings": None,
+                "next_earnings": None,
+                "status": cached.get("status", "found"),
             }
-            if cached.get('last_earnings'):
-                result['last_earnings'] = datetime.fromisoformat(cached['last_earnings'])
-            if cached.get('next_earnings'):
-                result['next_earnings'] = datetime.fromisoformat(cached['next_earnings'])
+            if cached.get("last_earnings"):
+                result["last_earnings"] = datetime.fromisoformat(
+                    cached["last_earnings"]
+                )
+            if cached.get("next_earnings"):
+                result["next_earnings"] = datetime.fromisoformat(
+                    cached["next_earnings"]
+                )
             return result
 
         # Fetch this symbol's earnings (per-symbol endpoint actually filters by symbol,
@@ -263,19 +189,25 @@ class EarningsChecker:
 
         # Never cache a transient error: a quota/network blip must not stay sticky for
         # the 12h TTL and keep the feed artificially dark.
-        if info['status'] != 'error':
+        if info["status"] != "error":
             self.cache[ticker] = {
-                "last_earnings": info['last_earnings'].isoformat() if info['last_earnings'] else None,
-                "next_earnings": info['next_earnings'].isoformat() if info['next_earnings'] else None,
+                "last_earnings": info["last_earnings"].isoformat()
+                if info["last_earnings"]
+                else None,
+                "next_earnings": info["next_earnings"].isoformat()
+                if info["next_earnings"]
+                else None,
                 "cached_at": datetime.now().isoformat(),
                 "source": "FMP",
-                "status": info['status'],
+                "status": info["status"],
             }
             self._save_cache()
 
         return info
 
-    def get_next_earnings_date(self, ticker: str, use_cache: bool = True) -> Optional[datetime]:
+    def get_next_earnings_date(
+        self, ticker: str, use_cache: bool = True
+    ) -> Optional[datetime]:
         """
         Get the next earnings date for a ticker using FMP API.
 
@@ -287,21 +219,21 @@ class EarningsChecker:
             datetime of next earnings, or None if no future date scheduled
         """
         info = self.get_earnings_info(ticker, use_cache)
-        return info['next_earnings']
+        return info["next_earnings"]
 
     def check_earnings_safe(
         self,
         ticker: str,
         expiration_date: datetime,
         buffer_days: int = 7,
-        allow_unverified: bool = False  # FAIL-CLOSED: missing data => REJECT (never trade blind)
+        allow_unverified: bool = False,  # FAIL-CLOSED: missing data => REJECT (never trade blind)
     ) -> Tuple[bool, Optional[datetime], str]:
         """
         Check if a stock is safe to trade (no earnings within window).
 
-        CRITICAL DESIGN CHANGE:
-        - Default behavior (allow_unverified=True): Missing data = PROCEED with warning
-        - Conservative mode (allow_unverified=False): Missing data = REJECT
+        FAIL-CLOSED by default (allow_unverified=False): missing data = REJECT.
+        Pass allow_unverified=True only when every UNVERIFIED name will be
+        manually verified before trading.
 
         Decision Logic:
         1. If FUTURE earnings found and SAFE -> (True, date, "SAFE - earnings on YYYY-MM-DD...")
@@ -309,39 +241,24 @@ class EarningsChecker:
         3. If NO future earnings but RECENT past earnings (within 90 days):
            -> (True, last_date, "SAFE - last earnings on YYYY-MM-DD, next not yet scheduled")
         4. If NO data at all:
-           a. allow_unverified=True -> (True, None, "UNVERIFIED - manually check")
-           b. allow_unverified=False -> (False, None, "REJECTED - earnings unverified")
+           a. allow_unverified=False (default) -> (False, None, "REJECTED - earnings unverified")
+           b. allow_unverified=True -> (True, None, "UNVERIFIED - manually check")
 
         Args:
             ticker: Stock ticker
             expiration_date: Option expiration date
             buffer_days: Additional buffer days after expiration (default: 7)
-            allow_unverified: If True (default), proceed when FMP data missing
+            allow_unverified: If True, proceed (flagged UNVERIFIED) when FMP data missing
 
         Returns:
             Tuple of (is_safe, earnings_date, reason)
             - is_safe: True if OK to trade, False if earnings conflict
             - earnings_date: The next earnings date (if found)
             - reason: Human-readable explanation
-
-        Examples:
-            (True, datetime(...), "SAFE - earnings on 2026-05-01 (20 days after buffer)")
-            (False, datetime(...), "REJECT - earnings on 2026-03-10 (5 days before exp)")
-            (True, datetime(...), "SAFE - last earnings on 2026-01-29, next not yet scheduled")
-            (True, None, "UNVERIFIED - FMP data unavailable, verify manually on Yahoo Finance")
         """
-        # Check if this is a manual/ETF ticker (no earnings to check)
-        try:
-            from universe import is_manual_ticker
-            if is_manual_ticker(ticker):
-                return (True, None, "SAFE - ETF/manual ticker (no earnings)")
-        except ImportError:
-            pass
-
         info = self.get_earnings_info(ticker)
-        last_earnings = info['last_earnings']
-        next_earnings = info['next_earnings']
-        status = info['status']
+        last_earnings = info["last_earnings"]
+        next_earnings = info["next_earnings"]
 
         today = datetime.now()
         danger_end = expiration_date + timedelta(days=buffer_days)
@@ -361,7 +278,7 @@ class EarningsChecker:
                 return (
                     False,
                     next_earnings,
-                    f"REJECT - earnings on {next_earnings.strftime('%Y-%m-%d')} ({days_to_earnings} days away)"
+                    f"REJECT - earnings on {next_earnings.strftime('%Y-%m-%d')} ({days_to_earnings} days away)",
                 )
 
             # Future earnings is outside danger window (SAFE)
@@ -369,7 +286,7 @@ class EarningsChecker:
             return (
                 True,
                 next_earnings,
-                f"SAFE - earnings on {next_earnings.strftime('%Y-%m-%d')} ({days_after_expiry} days after buffer)"
+                f"SAFE - earnings on {next_earnings.strftime('%Y-%m-%d')} ({days_after_expiry} days after buffer)",
             )
 
         # CASE 2: No future earnings, but we have recent past earnings
@@ -386,7 +303,7 @@ class EarningsChecker:
                 return (
                     True,
                     last_earnings,
-                    f"SAFE - last earnings {days_since_last}d ago ({last_earnings.strftime('%Y-%m-%d')}), next not yet scheduled"
+                    f"SAFE - last earnings {days_since_last}d ago ({last_earnings.strftime('%Y-%m-%d')}), next not yet scheduled",
                 )
             else:
                 # Last earnings was >90 days ago - unusual, warn user
@@ -394,13 +311,13 @@ class EarningsChecker:
                     return (
                         True,
                         last_earnings,
-                        f"UNVERIFIED - last earnings {days_since_last}d ago, manually verify next date"
+                        f"UNVERIFIED - last earnings {days_since_last}d ago, manually verify next date",
                     )
                 else:
                     return (
                         False,
                         last_earnings,
-                        f"REJECTED - last earnings {days_since_last}d ago, no next date (strict mode)"
+                        f"REJECTED - last earnings {days_since_last}d ago, no next date (strict mode)",
                     )
 
         # CASE 3: No data at all
@@ -408,64 +325,14 @@ class EarningsChecker:
             return (
                 True,
                 None,
-                "UNVERIFIED - FMP data unavailable, manually verify earnings on Yahoo Finance before trading"
+                "UNVERIFIED - FMP data unavailable, manually verify earnings on Yahoo Finance before trading",
             )
         else:
             return (
                 False,
                 None,
-                "REJECTED - earnings date unavailable (strict mode enabled)"
+                "REJECTED - earnings date unavailable (strict mode enabled)",
             )
-
-    def batch_check_earnings(
-        self,
-        tickers: List[str],
-        expiration_date: datetime,
-        buffer_days: int = 7,
-        allow_unverified: bool = True
-    ) -> Dict[str, Tuple[bool, Optional[datetime], str]]:
-        """
-        Check earnings safety for multiple tickers.
-
-        Args:
-            tickers: List of stock tickers
-            expiration_date: Option expiration date
-            buffer_days: Additional buffer days after expiration
-            allow_unverified: If True (default), include unverified stocks
-
-        Returns:
-            Dict mapping ticker to (is_safe, earnings_date, reason)
-        """
-        results = {}
-        for ticker in tickers:
-            results[ticker] = self.check_earnings_safe(
-                ticker, expiration_date, buffer_days, allow_unverified
-            )
-        return results
-
-    def get_safe_tickers(
-        self,
-        tickers: List[str],
-        expiration_date: datetime,
-        buffer_days: int = 7,
-        allow_unverified: bool = True
-    ) -> List[str]:
-        """
-        Filter tickers to only those safe from earnings.
-
-        Args:
-            tickers: List of stock tickers
-            expiration_date: Option expiration date
-            buffer_days: Additional buffer days after expiration
-            allow_unverified: If True (default), include unverified stocks
-
-        Returns:
-            List of safe tickers
-        """
-        results = self.batch_check_earnings(
-            tickers, expiration_date, buffer_days, allow_unverified
-        )
-        return [ticker for ticker, (is_safe, _, _) in results.items() if is_safe]
 
     def clear_cache(self):
         """Clear the earnings cache."""
@@ -488,15 +355,15 @@ if __name__ == "__main__":
     # Test expiration date (35 days from now - typical DTE)
     exp_date = datetime.now() + timedelta(days=35)
 
-    print(f"\n{'='*70}")
-    print(f"FMP EARNINGS CHECKER TEST")
+    print(f"\n{'=' * 70}")
+    print("FMP EARNINGS CHECKER TEST")
     print(f"Expiration: {exp_date.strftime('%Y-%m-%d')} (35 DTE)")
-    print(f"Buffer: 7 days")
-    print(f"{'='*70}\n")
+    print("Buffer: 7 days")
+    print(f"{'=' * 70}\n")
 
     for ticker in test_tickers:
         is_safe, earnings_date, reason = checker.check_earnings_safe(
-            ticker, exp_date, buffer_days=7, allow_unverified=True
+            ticker, exp_date, buffer_days=7
         )
 
         status_symbol = "+" if is_safe else "X"
@@ -504,7 +371,4 @@ if __name__ == "__main__":
 
         print(f"[{status_symbol}] {warning_flag}{ticker:6s}: {reason}")
 
-    print(f"\n{'='*70}")
-    safe = checker.get_safe_tickers(test_tickers, exp_date, buffer_days=7, allow_unverified=True)
-    print(f"Safe tickers: {', '.join(safe)}")
-    print(f"{'='*70}\n")
+    print(f"\n{'=' * 70}\n")

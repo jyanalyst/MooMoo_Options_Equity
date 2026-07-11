@@ -51,3 +51,6 @@ nul
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Claude web-app reference dumps
+Claude Web/

@@ -95,13 +95,6 @@ class HybridDataFetcher:
         self._quote_cache: Dict[str, Tuple[Dict, datetime]] = {}
         self._quote_cache_ttl = timedelta(minutes=15)
 
-        # Options chain caching with 5-minute TTL
-        self._chain_cache: Dict[Tuple[str, str], Tuple[pd.DataFrame, datetime]] = {}
-        self._chain_cache_ttl = timedelta(minutes=5)
-
-        # API call tracking (FMP Starter: 250 calls/day limit)
-        self._fmp_api_calls = 0
-
         # Shared FMP HTTP session with connection pooling + retry/backoff.
         # Mirrors the proven pattern in fmp_data_fetcher.py so transient FMP
         # latency (slow response under concurrent quote fetches) auto-retries
@@ -171,26 +164,9 @@ class HybridDataFetcher:
     def clear_cache(self):
         """Clear all cached data"""
         self._quote_cache.clear()
-        self._chain_cache.clear()
         HybridDataFetcher._standard_expirations_cache.clear()
         HybridDataFetcher._cache_timestamp = None
         print("Cache cleared")
-
-    def get_api_stats(self) -> Dict[str, int]:
-        """
-        Get FMP API usage statistics for this session.
-
-        FMP Starter plan limit: 250 calls/day
-
-        Returns:
-            Dict with API call count and cache stats
-        """
-        return {
-            "fmp_api_calls": self._fmp_api_calls,
-            "cache_size": len(self._quote_cache),
-            "daily_limit": 250,
-            "remaining": max(0, 250 - self._fmp_api_calls),
-        }
 
     def _rate_limit(self):
         """Apply rate limiting between MooMoo API calls"""
@@ -283,7 +259,6 @@ class HybridDataFetcher:
             # old 10s limit dropped slow-but-valid responses. Scalar (not tuple)
             # timeout matches fmp_data_fetcher.py and is reliable on urllib3 2.x.
             response = self._fmp_session.get(url, params=params, timeout=30)
-            self._fmp_api_calls += 1  # Track API usage
             response.raise_for_status()
             data = response.json()
 

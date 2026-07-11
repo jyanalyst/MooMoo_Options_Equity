@@ -96,39 +96,6 @@ WHEEL_CONFIG = {
 }
 
 # =============================================================================
-# EARNINGS CONFIGURATION (FMP-Only)
-# =============================================================================
-
-EARNINGS_CONFIG = {
-    "data_source": "FMP",  # Only FMP now (yfinance removed)
-    "cache_expiry_hours": 12,  # Refresh earnings cache every 12 hours
-    "allow_unverified": False,  # Default: fail-closed (reject when no earnings date)
-    "buffer_days": 7,  # Buffer days after expiration
-}
-
-# =============================================================================
-# MANUAL TICKER WHITELIST
-# Tickers added here bypass fundamental screening (e.g., ETFs, leveraged products)
-# WARNING: These are not quality-screened - understand the risks!
-# =============================================================================
-
-MANUAL_TICKERS = [
-    "TQQQ",  # 3x Leveraged Nasdaq-100 ETF - HIGH RISK, no earnings
-]
-
-# =============================================================================
-# POSITION SIZING (Reference only - not used in scanner logic)
-# =============================================================================
-
-POSITION_SIZING = {
-    "total_capital": 44500,  # USD
-    "max_per_position_pct": 0.20,
-    "target_position_pct_min": 0.10,
-    "target_position_pct_max": 0.15,
-    "cash_reserve_pct": 0.20,
-}
-
-# =============================================================================
 # OUTPUT SETTINGS
 # =============================================================================
 
