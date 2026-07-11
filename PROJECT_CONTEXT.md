@@ -5,7 +5,46 @@ Options income scanner for Wheel Strategy and Volatility Harvesting using MooMoo
 Conservative fundamental screening combined with options-specific technical filters.
 
 ## Current Phase
-**Universe Builder v3.0 — Minimalist CSP Rewrite (2026-06-13)**
+**Tier-1 Production Readiness (2026-07-11)**
+
+Full production-hardening pass: single-source architecture, real execution-quality gates,
+one FMP path, secrets out of source, tests on every layer that ranks money.
+~11,300 → ~6,600 lines of Python across 8 commits, repo green after each.
+
+- **MooMoo-only options data.** Deleted the IBKR path (ibkr_data_fetcher.py, main_ibkr.py,
+  ib_async) and the DataSource dual-entry abstraction; single `main.py` entry point.
+  Rationale: trades are placed on MooMoo anyway, and MooMoo API v10.7 (June 2026) adds
+  Fundamentals (earnings calendar) + Screener APIs — the planned future exit from FMP's
+  250-call/day cap. Dropped the broken `--liquid-only` flag (its universe function never
+  existed; contract-level hard filters gate liquidity at the right level).
+- **Production hard filters** (screener_wheel `_analyze_option`, per-contract, from
+  WHEEL_CONFIG): OI ≥ 100, spread ≤ 10% of mid, premium ≥ 0.5% of strike; missing
+  bid/ask/delta ⇒ hard reject — the old last_price±2% bid/ask fabrication and moneyness
+  delta approximation are REMOVED. IV rank / term structure remain soft (score-only).
+- **Three IV unit bugs fixed:** option record stored pct-IV ×100 (3,320 for 33.2% vol);
+  term-structure diff ×100 pinned every live reading to CONTANGO/BACKWARDATION extremes
+  (corrupting up to 20 quality-score points); IV−HV spread mixed pct with decimal.
+  Convention locked: chain IV is a percentage everywhere; iv_history.json stays decimal.
+- **One FMP HTTP path:** new `fmp_client.py` (session + retry, thread-safe 1 req/s
+  throttle, TTL file cache, errors never cached) replaced five divergent implementations;
+  fmp_data_fetcher.py (1,124 lines) deleted. earnings_monitor now consumes EarningsChecker
+  (one earnings fetch, two presentation layers, both FAIL-CLOSED — checker docstrings had
+  claimed fail-open, wrongly). FMP key moved to `FMP_API_KEY` env var + `.env` loader.
+- **`--mock` is fully offline** (stub earnings checker, temp IV files, realistic mock chain
+  honoring the delta band) — it is the automated verification gate; no network, no
+  repo-root writes.
+- **trade_journal trimmed 2,305 → 1,547 lines** (FMP side-model for sector/quality deleted —
+  universe.py is the source; dead log_entry/log_exit/get_trade removed).
+  `vix_monitor.get_regime()` is now the single VIX-regime source of truth.
+- **Tests 55 → 97** (hard filters per reject reason, offline scan smoke, FMP client cache/
+  throttle semantics, trade-journal parsing, universe-builder pipeline). The builder tests
+  caught a real bug: NaN operating margins were silently passing the profitability gate.
+- Deleted ~1,400 lines of legacy root test scripts + cruft; reference docs moved to docs/.
+
+**Known deferred smell:** HybridDataFetcher's class-level expiration cache can reuse the
+first ticker's expirations for every stock in a scan — flagged for a future pass.
+
+### [Superseded] Universe Builder v3.0 — Minimalist CSP Rewrite (2026-06-13)
 
 Rebuilt `universe_builder.py` from ~4,200 lines to ~330 as a simple, robust cash-secured-put idea
 generator (a CSP universe needs ownable + liquid + affordable names, not a deep-value gauntlet).

@@ -4,24 +4,21 @@ Wheel-strategy (cash-secured put) options-income scanner for US equities.
 Act as a tier-1 quant developer: statistical rigor and simple, robust solutions over cleverness.
 
 ## Stack
-Python 3.11+ | pandas · numpy · scipy | FMP API (quotes, fundamentals, earnings, VIX) |
-MooMoo OpenD (options chains + Greeks) | IBKR via ib_async (alternative options source —
-see main_ibkr.py) | yfinance (legacy: historical/IV only).
+Python 3.11+ | pandas · numpy | FMP API (quotes, fundamentals, earnings, VIX — ALL through
+`fmp_client.py`) | MooMoo OpenD (options chains + Greeks, the ONLY options source) |
+yfinance (historical/IV only).
 See @requirements.txt for deps · @README.md for the full weekly workflow.
 
 ## Build & Run
-- Two entry points, one per options-data source — identical flags/scan logic (shared in
-  `scanner_app.py`), they differ ONLY in where the options chain + Greeks come from:
-  - `python main_moomoo.py wheel [--capital N | --liquid-only | --mock]` — **MooMoo OpenD** options.
-  - `python main_ibkr.py wheel [...]` — **IBKR** options (live OPRA, the live-trading path).
-  Default `--capital 8900`. Stock quotes (FMP) and history (yfinance) are the same on both; trades
-  are placed manually on MooMoo regardless.
-- Adding or changing a CLI flag or scan step: edit `scanner_app.py` (the shared core), not the two
-  thin entry points — each just defines a `DataSource` (fetcher factory, banner label, connect hints).
+- Single entry point: `python main.py wheel [--capital N | --mock]`. Default `--capital 8900`.
+  Trades are placed manually on MooMoo; the scanner is read-only.
+- `--mock` is FULLY OFFLINE (stub earnings checker, temp IV files, mock chain) — it is the
+  automated verification gate; keep it that way.
 - Refresh universe (bi-weekly): `python universe_builder.py [--dry-run]`
 - Earnings calendar: `python earnings_monitor.py`
 - VIX regime: `python vix_monitor.py --status`
-- Test: `python -m pytest tests/ -v`
+- Trade journal: `python trade_journal.py [stats|open|sector|import <csv>|export]`
+- Test: `python -m pytest tests/ -v` (offline; ~90 tests)
 - Lint: handled automatically by the PostToolUse hook (ruff check + ruff format)
 
 ## Financial Rules (always apply)
@@ -30,7 +27,14 @@ See @requirements.txt for deps · @README.md for the full weekly workflow.
   assumption stated explicitly — it is a yield comparator, not a compounded return.
 - Measure IV richness as IV **Percentile** vs the persisted IV history — never against realized
   (historical) volatility; the two are different quantities.
+- Chain `implied_volatility` is a PERCENTAGE everywhere (35.2 = 35.2% vol); `iv_history.json`
+  stores decimals. Never rescale by 100 in a consumer.
+- NO FABRICATED DATA: a contract missing bid/ask or Greeks is hard-rejected, never approximated.
+  Hard execution-quality rejects (OI ≥ 100, spread ≤ 10%, premium ≥ 0.5% of strike) live in
+  WHEEL_CONFIG — do not soften them back to score-only.
 - Position sizing is capital-driven (`get_wheel_universe(max_capital)`); never hardcode share counts.
+- VIX regime bands live in `vix_monitor.get_regime()` (single source of truth);
+  `trade_journal.classify_vix_regime` is a thin wrapper over it.
 
 <important if='you are working on FMP, MooMoo, or any data fetching/caching'>
 See @.claude/rules/data-fetching.md
@@ -53,24 +57,16 @@ Use the statistical-validation skill.
   stock quotes still work via FMP, but the scan returns no candidates.
 - MooMoo tickers need a `US.` prefix (use `format_moomoo_symbol()` in universe.py); options require an
   OPRA subscription (free with $3k+ MooMoo balance) for Greeks.
-- IBKR options come from `main_ibkr.py` → ibkr_data_fetcher.py (MooMoo options come from `main_moomoo.py` →
-  data_fetcher.py). IBKR needs IB Gateway/TWS running AND logged in; the API port is `config.IBKR_PORT`
-  (default 4001 here). Paper vs live is set by the Gateway login, NOT the port. Stock quotes stay on
-  FMP and history on yfinance — only the options chain comes from IBKR.
-- OPRA market data is subscribed on the live account (U13380098); `config.IBKR_MARKET_DATA_TYPE = 1`
-  (live) and the fetcher is **LIVE-ONLY — it never falls back to delayed** (delayed quotes are
-  stale/wide and produce junk candidates after-hours). If the live feed yields no Greeks for a stock
-  (market closed, or a subscription gap) that stock is **skipped with a warning** in
-  `_snapshot_options`. **Error 10091** was caused by underlying-equity generic ticks (104/106) that
-  pull the stock's NYSE/Nasdaq feed (not subscribed — stock quotes come from FMP); the chain request
-  now uses only OPRA option ticks (`genericTickList="100,101"`) and Greeks arrive via `modelGreeks`.
-  If 10091 still appears, `_on_ibkr_error` prints a one-time hint: OPRA must be subscribed AND
-  **API-enabled** for U13380098 (IBKR Account Management → Market Data Subscriptions; check the
-  Gateway "Market Data Connections" dialog).
-- FMP Starter plan = 250 calls/day. Cache responses; never re-fetch within a TTL window.
-- FMP API key is hardcoded in [config.py:10](config.py#L10) — treat as a secret; do not log or commit
-  new copies. (Tracked for migration to an env var.)
+- FMP Starter plan = 250 calls/day, 1 req/s. ALL FMP HTTP goes through `fmp_client.get_client()`
+  (session + retry + throttle + TTL file cache, errors never cached) — never add raw
+  `requests.get()` calls to FMP.
+- FMP API key: `FMP_API_KEY` env var (set in gitignored `.env`); config.py holds a legacy fallback
+  literal — treat as a secret; do not log it or copy it into new files.
 - `universe.py` is AUTO-GENERATED by universe_builder.py — never hand-edit it; regenerate instead.
+
+## Future (deliberate, not yet done)
+- MooMoo API v10.7+ ships Fundamentals (earnings calendar) + Screener APIs — the planned migration
+  path off FMP's 250-call/day cap. Do not migrate piecemeal; it's a dedicated pass.
 
 ## Repository etiquette
 - Update [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) after completing a feature or an architecture decision.
