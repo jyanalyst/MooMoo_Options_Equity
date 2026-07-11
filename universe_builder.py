@@ -293,7 +293,9 @@ def apply_quality_gate(df: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
     keep = []
     for _, s in df.iterrows():
         op = s["operating_margin"]
-        if op is None or op <= 0:
+        # pd.isna covers both None and NaN (None becomes NaN inside a numeric
+        # DataFrame column, and NaN <= 0 is False — it would slip the gate).
+        if op is None or pd.isna(op) or op <= 0:
             dropped_tickers.append(s["ticker"])
             continue
         keep.append(s)
