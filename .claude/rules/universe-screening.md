@@ -10,12 +10,23 @@ globs: ['**/universe_builder.py', '**/screener_wheel.py', '**/universe.py']
   `format_moomoo_symbol`. Don't reimplement capital filtering or symbol formatting.
 
 ## Universe construction (universe_builder.py)
-- Scoring is sector-aware: each metric is percentile-ranked within its sector, so margin-based metrics
-  don't penalise defensive names. Single-stock sectors get a neutral 50th percentile.
-- Sector diversity is enforced (max ~35% per sector, minimum sector count, capped cyclicals incl. a
-  crypto penalty). Preserve these constraints when changing scoring.
-- Filter exemptions are intentional: banks skip Current-Ratio / Debt-Equity / FCF checks (deposits are
-  not debt; banks lack traditional FCF); thin-margin retailers (e.g. WMT) are FCF-exempt. Don't "fix" these.
+The builder is a deliberately MINIMAL CSP idea generator, not a deep-value equity screen. Pipeline:
+one FMP `company-screener` call → free client-side prune (ETF/fund/inactive/biotech, rank by dollar
+volume, cap to `FUNDAMENTAL_POOL_CAP`) → one `ratios-ttm` call per name → profitability gate →
+sector-aware score → sector-diversified selection → write `universe.py`. Cold-run cost ≈ 1 + pool-cap
+FMP calls (well under the 250/day Starter cap); near-zero warm. Fully non-interactive — NO `input()`.
+- The ONLY fundamental hard gate is positive TTM operating margin. Do NOT re-add Debt/Equity or
+  Current-Ratio hard cuts: for $10B+ names they are unreliable (buybacks drive book equity negative →
+  meaningless D/E; cash-efficient mega-caps run CR < 1) and ejected premier CSP names (ADBE, ORCL,
+  PEP, HD, UNH, T, VZ, utilities). Size + profitability + liquidity is the robust gate.
+- Scoring is sector-aware: each metric (operating margin, net margin, gross margin) is percentile-
+  ranked WITHIN its sector so margin-based metrics don't penalise low-margin sectors; liquidity ranks
+  globally. Single-stock sectors and fully-missing metrics get a neutral 0.5 percentile. (Net margin
+  is used over ROE: ratios-ttm exposes netProfitMarginTTM in the same single call, whereas ROE lives
+  in key-metrics-ttm — a second call that would blow the budget — and is buyback-distorted anyway.)
+- Sector diversity is a single dominance cap (`MAX_SECTOR_PCT`, ~35%) applied via quality-first greedy
+  fill. There is intentionally NO `min N per sector` rule (it force-includes low-quality names) and NO
+  crypto/cyclical penalty (crypto-treasury proxies like MSTR are kept by choice; discretion at trade time).
 
 ## Screening (screener_wheel.py)
 - Wheel filters: delta 0.20–0.30 (from OPRA Greeks), DTE 30–45, IV percentile soft-filter, spread caps,

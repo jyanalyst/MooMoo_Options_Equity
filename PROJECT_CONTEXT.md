@@ -5,9 +5,30 @@ Options income scanner for Wheel Strategy and Volatility Harvesting using MooMoo
 Conservative fundamental screening combined with options-specific technical filters.
 
 ## Current Phase
-**Universe Builder v2.0 Complete (2026-01-25)**
+**Universe Builder v3.0 — Minimalist CSP Rewrite (2026-06-13)**
 
-### Recent Session - Sector-Aware Scoring & Filter Exemptions
+Rebuilt `universe_builder.py` from ~4,200 lines to ~330 as a simple, robust cash-secured-put idea
+generator (a CSP universe needs ownable + liquid + affordable names, not a deep-value gauntlet).
+Output schema and `universe.py` helper surface are unchanged (downstream contract preserved).
+
+- **Pipeline:** 1 FMP `company-screener` call → free client-side prune (ETF/fund/inactive/biotech,
+  rank by dollar volume, cap to `FUNDAMENTAL_POOL_CAP=200`) → 1 `ratios-ttm` call/name → profitability
+  gate → sector-aware score → sector-diversified greedy fill → write. **≈160 cold FMP calls, ~0 warm**
+  (was 360–1,150, over the 250/day cap). Fully non-interactive — removed all `input()` prompts.
+- **Gate simplified to profitability only** (positive TTM operating margin). Dropped the Altman-Z /
+  Piotroski / analyst-buy% / FCF / ROE-consistency machinery, AND the Debt/Equity & Current-Ratio hard
+  cuts — those are unreliable for mega-caps (buybacks → negative book equity; CR < 1 is normal) and
+  were ejecting blue chips (ADBE, ORCL, PEP, HD, UNH, T, VZ, utilities). Bank/staple exemptions are no
+  longer needed. Verified: gate keeps 188/200, dropping only genuinely unprofitable names (INTC, BA, SNOW…).
+- **Scoring:** sector-aware percentile of operating margin (30%), net margin (25%), gross margin (20%),
+  liquidity (25%); single-stock/missing → neutral 0.5. (Net margin, not ROE: ratios-ttm returns it in
+  the same single call and it isn't distorted by buyback-shrunken book equity.) **Diversity:** single 35% dominance cap via
+  quality-first greedy fill — removed `min N per sector` (force-included low quality) and the crypto
+  penalty (MSTR-type proxies kept by user choice; discretion at trade time).
+- Verified end-to-end: dry-run (no writes, 0 prompts), real build (60 names, backup created), downstream
+  import + capital filter + scanner `--mock` rank, and `pytest` (55 passed / 1 skipped).
+
+### [Superseded by v3.0] v2.0 - Sector-Aware Scoring & Filter Exemptions (2026-01-25)
 Fixed universe builder producing 18 stocks instead of 25-30:
 
 1. **Sector-Aware Percentile Scoring** - Stocks now ranked within sector peers
