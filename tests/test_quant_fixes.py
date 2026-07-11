@@ -37,7 +37,11 @@ class FakeFetcher:
         return pd.DataFrame(
             {
                 "strike_price": [95.0, 100.0, 105.0],
-                "implied_volatility": [self.atm_iv_pct - 1, self.atm_iv_pct, self.atm_iv_pct + 1],
+                "implied_volatility": [
+                    self.atm_iv_pct - 1,
+                    self.atm_iv_pct,
+                    self.atm_iv_pct + 1,
+                ],
             }
         )
 
@@ -70,7 +74,8 @@ def _option_series(strike=100.0, bid=2.0, ask=2.1, delta=-0.25):
             "last_price": bid,
             "volume": 100,
             "open_interest": 500,
-            "implied_volatility": 0.35,
+            # Percentage, matching the live-chain convention (35.0 == 35% vol)
+            "implied_volatility": 35.0,
             "code": "TEST",
         }
     )
@@ -109,7 +114,9 @@ def test_annualized_zero_dte_safe(screener):
 
 @pytest.mark.parametrize("dte", [1, 7, 15, 30, 45, 90, 200, 364, 365])
 def test_annualized_ge_raw_property(screener, dte):
-    res = screener._analyze_option(_option_series(strike=100.0, bid=3.0), stock_price=100.0, dte=dte)
+    res = screener._analyze_option(
+        _option_series(strike=100.0, bid=3.0), stock_price=100.0, dte=dte
+    )
     assert res["annualized_return_pct"] >= res["return_pct"] >= 0
 
 
@@ -118,13 +125,13 @@ def test_annualized_ge_raw_property(screener, dte):
 # --------------------------------------------------------------------------- #
 def test_iv_percentile_known_values(analyzer):
     analyzer.iv_history["XYZ"] = [
-        {"date": f"2025-01-0{i+1}", "iv": v}
+        {"date": f"2025-01-0{i + 1}", "iv": v}
         for i, v in enumerate([0.10, 0.20, 0.30, 0.40, 0.50])
     ]
     # 3 of 5 observations (0.10, 0.20, 0.30) are strictly below 0.35.
     assert analyzer.calculate_iv_percentile("XYZ", 0.35) == 60.0
-    assert analyzer.calculate_iv_percentile("XYZ", 0.05) == 0.0      # below all
-    assert analyzer.calculate_iv_percentile("XYZ", 0.99) == 100.0    # above all
+    assert analyzer.calculate_iv_percentile("XYZ", 0.05) == 0.0  # below all
+    assert analyzer.calculate_iv_percentile("XYZ", 0.99) == 100.0  # above all
 
 
 def test_iv_percentile_empty_history_returns_none(analyzer):
@@ -135,10 +142,12 @@ def test_iv_rank_proxy_clamped_to_100(analyzer):
     # Seed a valid HV range in cache; current IV far above the historical max would
     # otherwise yield >100. Must clamp to [0, 100].
     analyzer.cache["XYZ"] = {
-        "iv_low": 0.20, "iv_high": 0.40, "cached_at": datetime.now().isoformat()
+        "iv_low": 0.20,
+        "iv_high": 0.40,
+        "cached_at": datetime.now().isoformat(),
     }
-    assert analyzer.calculate_iv_rank("XYZ", 0.90) == 100.0   # would be 350 unclamped
-    assert analyzer.calculate_iv_rank("XYZ", 0.05) == 0.0     # would be -75 unclamped
+    assert analyzer.calculate_iv_rank("XYZ", 0.90) == 100.0  # would be 350 unclamped
+    assert analyzer.calculate_iv_rank("XYZ", 0.05) == 0.0  # would be -75 unclamped
 
 
 # --------------------------------------------------------------------------- #
@@ -146,7 +155,9 @@ def test_iv_rank_proxy_clamped_to_100(analyzer):
 # --------------------------------------------------------------------------- #
 def test_provisional_iv_contributes_zero_score(screener):
     base = {"iv_rank": 95, "term_structure": "NEUTRAL"}
-    provisional = screener._calculate_quality_score({**base, "iv_method": "hv_proxy_provisional"})
+    provisional = screener._calculate_quality_score(
+        {**base, "iv_method": "hv_proxy_provisional"}
+    )
     real = screener._calculate_quality_score({**base, "iv_method": "iv_percentile"})
     # Only difference is the IV contribution: 30 pts for a real >=50 reading, 0 when provisional.
     assert real - provisional == 30
@@ -154,32 +165,38 @@ def test_provisional_iv_contributes_zero_score(screener):
 
 def test_earnings_default_is_fail_closed():
     from config import WHEEL_CONFIG
+
     assert WHEEL_CONFIG["allow_unverified_earnings"] is False
 
 
 # --------------------------------------------------------------------------- #
 # VIX regime (v3.1): correct labels/bands, consistent with trade_journal
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("vix,expected", [
-    (10.0, "STOP"),
-    (13.99, "STOP"),
-    (14.0, "CAUTIOUS"),
-    (15.32, "CAUTIOUS"),   # today's reading the analysis flagged
-    (15.91, "CAUTIOUS"),   # the stale-log value mislabeled NORMAL
-    (17.99, "CAUTIOUS"),
-    (18.0, "NORMAL"),
-    (25.0, "NORMAL"),
-    (25.01, "AGGRESSIVE"),
-    (40.0, "AGGRESSIVE"),
-])
+@pytest.mark.parametrize(
+    "vix,expected",
+    [
+        (10.0, "STOP"),
+        (13.99, "STOP"),
+        (14.0, "CAUTIOUS"),
+        (15.32, "CAUTIOUS"),  # today's reading the analysis flagged
+        (15.91, "CAUTIOUS"),  # the stale-log value mislabeled NORMAL
+        (17.99, "CAUTIOUS"),
+        (18.0, "NORMAL"),
+        (25.0, "NORMAL"),
+        (25.01, "AGGRESSIVE"),
+        (40.0, "AGGRESSIVE"),
+    ],
+)
 def test_vix_regime_v31(vix, expected):
     import vix_monitor
+
     assert vix_monitor.get_regime(vix) == expected
 
 
 def test_vix_monitor_matches_trade_journal():
     import vix_monitor
     import trade_journal
+
     for vix in [9.5, 14.0, 15.32, 18.0, 22.5, 25.0, 30.0]:
         assert vix_monitor.get_regime(vix) == trade_journal.classify_vix_regime(vix)
 
@@ -192,15 +209,21 @@ def test_vix_monitor_matches_trade_journal():
 # --------------------------------------------------------------------------- #
 def test_crush_guard_rejects_recent_earnings_when_iv_unconfirmed(screener):
     from datetime import timedelta
-    recent = datetime.now() - timedelta(days=6)   # PDD-like: 6 days post-earnings
+
+    recent = datetime.now() - timedelta(days=6)  # PDD-like: 6 days post-earnings
     # Provisional IV (warm-up) -> cannot confirm elevated -> crush risk -> reject.
-    assert screener._is_post_earnings_crush(recent, "hv_proxy_provisional", None) is True
+    assert (
+        screener._is_post_earnings_crush(recent, "hv_proxy_provisional", None) is True
+    )
     # Even a high provisional reading must not rescue it (not a reliable method).
-    assert screener._is_post_earnings_crush(recent, "hv_proxy_provisional", 86.7) is True
+    assert (
+        screener._is_post_earnings_crush(recent, "hv_proxy_provisional", 86.7) is True
+    )
 
 
 def test_crush_guard_allows_recent_earnings_with_confirmed_high_iv(screener):
     from datetime import timedelta
+
     recent = datetime.now() - timedelta(days=6)
     # Guide rule: post-earnings entry OK if IV Rank confirmed elevated (>40).
     assert screener._is_post_earnings_crush(recent, "iv_percentile", 55.0) is False
@@ -210,6 +233,7 @@ def test_crush_guard_allows_recent_earnings_with_confirmed_high_iv(screener):
 
 def test_crush_guard_ignores_old_or_missing_earnings(screener):
     from datetime import timedelta
+
     old = datetime.now() - timedelta(days=60)
     assert screener._is_post_earnings_crush(old, "hv_proxy_provisional", None) is False
     assert screener._is_post_earnings_crush(None, "hv_proxy_provisional", None) is False
@@ -217,18 +241,19 @@ def test_crush_guard_ignores_old_or_missing_earnings(screener):
 
 def test_earnings_monitor_fails_closed(monkeypatch):
     import earnings_monitor
+
     # Simulate a dark FMP feed: every per-ticker fetch returns None.
     monkeypatch.setattr(earnings_monitor, "fetch_earnings_for_ticker", lambda t: None)
     rows = earnings_monitor.categorize_earnings(["V", "KO"])
     assert rows, "expected rows for the given universe"
-    assert all(r["status"] == "UNVERIFIED" for r in rows)   # never fabricated SAFE
+    assert all(r["status"] == "UNVERIFIED" for r in rows)  # never fabricated SAFE
     assert all(r["earnings_date"] == "" for r in rows)
 
 
 @pytest.mark.parametrize("current", [0.0, 0.05, 0.25, 0.35, 0.6, 1.5])
 def test_iv_percentile_bounded(analyzer, current):
     analyzer.iv_history["XYZ"] = [
-        {"date": f"2025-02-{i+1:02d}", "iv": 0.1 + 0.05 * i} for i in range(10)
+        {"date": f"2025-02-{i + 1:02d}", "iv": 0.1 + 0.05 * i} for i in range(10)
     ]
     pct = analyzer.calculate_iv_percentile("XYZ", current)
     assert 0.0 <= pct <= 100.0
@@ -241,14 +266,14 @@ def test_record_overwrites_same_day(analyzer):
     analyzer.record_iv_observation("AAA", 0.30)
     analyzer.record_iv_observation("AAA", 0.40)
     series = analyzer.iv_history["AAA"]
-    assert len(series) == 1           # same calendar day -> overwrite, not append
+    assert len(series) == 1  # same calendar day -> overwrite, not append
     assert series[-1]["iv"] == 0.40
 
 
 def test_record_caps_to_lookback(analyzer):
     analyzer.lookback_days = 3
     analyzer.iv_history["AAA"] = [
-        {"date": f"2025-01-0{i+1}", "iv": 0.2} for i in range(3)
+        {"date": f"2025-01-0{i + 1}", "iv": 0.2} for i in range(3)
     ]
     analyzer.record_iv_observation("AAA", 0.31)  # today, distinct date
     assert len(analyzer.iv_history["AAA"]) == 3
@@ -274,7 +299,7 @@ def test_method_is_provisional_before_warmup(analyzer):
 def test_method_is_percentile_after_warmup(analyzer):
     analyzer.min_observations = 20
     analyzer.iv_history["AAA"] = [
-        {"date": f"2024-12-{i+1:02d}", "iv": 0.20 + 0.005 * i} for i in range(25)
+        {"date": f"2024-12-{i + 1:02d}", "iv": 0.20 + 0.005 * i} for i in range(25)
     ]
     res = analyzer.get_full_iv_analysis("AAA", "2025-03-21")
     assert res["iv_method"] == "iv_percentile"
@@ -293,7 +318,9 @@ def test_hypothesis_properties(analyzer, screener):
         current=st.floats(min_value=0.0, max_value=5.0),
     )
     def _percentile_bounded(ivs, current):
-        analyzer.iv_history["H"] = [{"date": f"d{i}", "iv": v} for i, v in enumerate(ivs)]
+        analyzer.iv_history["H"] = [
+            {"date": f"d{i}", "iv": v} for i, v in enumerate(ivs)
+        ]
         pct = analyzer.calculate_iv_percentile("H", current)
         assert 0.0 <= pct <= 100.0
 

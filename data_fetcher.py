@@ -13,6 +13,7 @@ This architecture uses professional-grade APIs for both stock and options data:
 
 from typing import Optional, List, Dict, Tuple, Any
 from datetime import datetime, timedelta
+import math
 import time
 import pandas as pd
 
@@ -694,18 +695,27 @@ class MockDataFetcher:
         return expirations
 
     def get_options_chain(self, ticker: str, expiration: str, **kwargs) -> pd.DataFrame:
-        """Return mock options chain"""
+        """Return mock options chain (percentage IV, production-tight spreads)."""
         quote = self.get_stock_quote(ticker)
         price = quote["price"]
 
-        # Generate strikes around current price
-        strikes = [price * (1 - i * 0.05) for i in range(-3, 8)]
+        # Generate strikes around current price (2.5% steps for band coverage)
+        strikes = [price * (1 - i * 0.025) for i in range(-3, 15)]
 
         data = []
         for strike in strikes:
-            delta = -0.5 * (1 - (price - strike) / price)  # Simplified delta calc
+            # Realistic-ish put delta: -0.50 ATM, decaying with OTM distance
+            # (~-0.27 at 5% OTM, ~-0.20 at 7.5% OTM), approaching -0.95 deep ITM.
+            if strike <= price:
+                otm = 1 - strike / price
+                delta = -0.5 * math.exp(-12 * otm)
+            else:
+                delta = -min(0.95, 0.5 + 3 * (strike / price - 1))
             delta = max(-0.95, min(-0.05, delta))
 
+            # Premium scales with price so return_pct is price-invariant
+            # (~1.5% of strike at delta 0.25) and passes the premium floor.
+            bid = round(abs(delta) * 0.06 * price, 2)
             data.append(
                 {
                     "code": f"US.{ticker}XXXXP{int(strike * 1000):08d}",
@@ -716,16 +726,27 @@ class MockDataFetcher:
                     "gamma": 0.05,
                     "theta": -0.03,
                     "vega": 0.15,
-                    "implied_volatility": 0.35,
+                    # Percentage IV with a put-skew shape, matching live sources
+                    "implied_volatility": round(30 + 8 * abs(delta), 1),
                     "open_interest": 5000,
                     "volume": 1500,
-                    "bid": round(abs(delta) * 3, 2),
-                    "ask": round(abs(delta) * 3 + 0.10, 2),
-                    "last_price": round(abs(delta) * 3 + 0.05, 2),
+                    "bid": bid,
+                    "ask": round(bid * 1.06, 2),  # ~6% spread (inside 10% hard cap)
+                    "last_price": round(bid * 1.03, 2),
                 }
             )
 
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+
+        # Honor the delta band like the live chain fetch does
+        delta_min = kwargs.get("delta_min")
+        delta_max = kwargs.get("delta_max")
+        if delta_min is not None:
+            df = df[df["delta"] >= delta_min]
+        if delta_max is not None:
+            df = df[df["delta"] <= delta_max]
+
+        return df.reset_index(drop=True)
 
     def get_historical_data(
         self, ticker: str, days: int = 252, **kwargs

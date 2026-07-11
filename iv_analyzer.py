@@ -20,13 +20,15 @@ class IVAnalyzer:
     - Term Structure: Contango (favorable) vs Backwardation (unfavorable)
     """
 
-    def __init__(self, data_fetcher, cache_file: str = None):
+    def __init__(self, data_fetcher, cache_file: str = None, history_file: str = None):
         """
         Initialize IV Analyzer.
 
         Args:
-            data_fetcher: MooMooDataFetcher or MockDataFetcher instance
-            cache_file: Path to IV cache file
+            data_fetcher: HybridDataFetcher or MockDataFetcher instance
+            cache_file: Path to IV cache file (default from IV_RANK_CONFIG)
+            history_file: Path to IV history file (default from IV_RANK_CONFIG).
+                Pass a temp path in mock/offline runs so the real history is untouched.
         """
         self.data_fetcher = data_fetcher
         self.cache_file = cache_file or IV_RANK_CONFIG.get(
@@ -38,7 +40,9 @@ class IVAnalyzer:
 
         # Real IV history (self-consistent series of daily ATM implied vol per ticker),
         # used to compute a statistically valid IV Percentile. See record_iv_observation.
-        self.history_file = IV_RANK_CONFIG.get("iv_history_file", "./iv_history.json")
+        self.history_file = history_file or IV_RANK_CONFIG.get(
+            "iv_history_file", "./iv_history.json"
+        )
         self.min_observations = IV_RANK_CONFIG.get("min_observations", 20)
         self.iv_history = self._load_history()
 
@@ -352,8 +356,10 @@ class IVAnalyzer:
         if front_iv is None or back_iv is None:
             return ("UNKNOWN", 0.0, "Could not determine term structure")
 
-        iv_diff = back_iv - front_iv
-        iv_diff_pct = iv_diff * 100  # Convert to percentage points
+        # Chain IVs are already percentages (e.g. 35.2), so the difference is
+        # already in percentage points — do NOT multiply by 100 (that pinned
+        # every live reading to the CONTANGO/BACKWARDATION extremes).
+        iv_diff_pct = back_iv - front_iv
 
         # Classify term structure
         if iv_diff_pct > 2.0:
@@ -435,9 +441,10 @@ class IVAnalyzer:
         if hv_20:
             result["hv_20"] = round(hv_20 * 100, 1)
 
-            # IV-HV spread (positive = IV overpriced = good for selling)
+            # IV-HV spread (positive = IV overpriced = good for selling).
+            # current_iv is a percentage, hv_20 a decimal — align units first.
             if current_iv:
-                result["iv_hv_spread"] = round((current_iv - hv_20) * 100, 1)
+                result["iv_hv_spread"] = round(current_iv - hv_20 * 100, 1)
 
         # Term structure analysis (need to find back-month expiration)
         expirations = self.data_fetcher.get_option_expirations(ticker)

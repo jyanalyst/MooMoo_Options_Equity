@@ -17,15 +17,10 @@ class WheelScreener:
     """
     Screens stocks for Wheel Strategy (cash-secured puts).
 
-    Criteria:
-    - Stock price: $15-200
-    - IV Rank: >30% (ideally >50%)
-    - Delta: 0.20-0.30
-    - DTE: 30-45 days
-    - Volume: >1,000 contracts
-    - Bid-ask spread: <10% of mid
-    - No earnings within DTE + 7 days
-    - Term structure: Contango preferred
+    Hard filters (reject): price $15-200, DTE 30-45, delta 0.20-0.30, earnings
+    safety (fail-closed), OI >= open_interest_min, spread <= bid_ask_spread_max_pct,
+    premium >= premium_pct_of_strike_min. Missing bid/ask/delta => reject (never
+    approximated). Soft (score-only): IV Rank, term structure.
     """
 
     def __init__(
@@ -33,6 +28,8 @@ class WheelScreener:
         data_fetcher,
         max_capital: int = None,
         allow_unverified: bool = None,
+        earnings_checker=None,
+        iv_analyzer=None,
     ):
         """
         Initialize Wheel Screener.
@@ -42,6 +39,8 @@ class WheelScreener:
             max_capital: Maximum capital per position in dollars (optional)
                         e.g., 10000 filters to stocks with price <= $100
             allow_unverified: Allow stocks with unverified earnings dates (default: from config)
+            earnings_checker: Injectable EarningsChecker (mock runs pass an offline stub)
+            iv_analyzer: Injectable IVAnalyzer (mock runs pass one with temp files)
         """
         self.data_fetcher = data_fetcher
         self.max_capital = max_capital
@@ -53,8 +52,8 @@ class WheelScreener:
         )
 
         self.universe = get_wheel_universe(self.max_capital)
-        self.earnings_checker = EarningsChecker()
-        self.iv_analyzer = IVAnalyzer(data_fetcher)
+        self.earnings_checker = earnings_checker or EarningsChecker()
+        self.iv_analyzer = iv_analyzer or IVAnalyzer(data_fetcher)
         self.config = WHEEL_CONFIG
 
     def screen_candidates(self, verbose: bool = True) -> List[Dict]:
@@ -182,8 +181,16 @@ class WheelScreener:
             return "No expiration in DTE range"
         if "expiration" in r:
             return "No option expirations"
-        if "bid" in r:
-            return "No options with valid bid"
+        if "oi " in r:
+            return "Liquidity (OI too low)"
+        if "spread" in r:
+            return "Spread too wide"
+        if "premium" in r:
+            return "Premium below floor"
+        if "bid" in r or "hard-rejected" in r:
+            return "No tradeable contracts"
+        if "delta" in r:
+            return "No contracts in delta band"
         if "price" in r:
             return "Price out of range"
         return "Other"
@@ -393,41 +400,53 @@ class WheelScreener:
         if chain is None or chain.empty:
             result["status"] = "REJECTED"
             result["reject_reason"] = (
-                f"No options match delta {self.config['delta_min']}-{self.config['delta_max']} with volume >{self.config['volume_min']}"
+                f"No options match delta {self.config['delta_min']}-{self.config['delta_max']}"
             )
             if verbose:
                 print(f"      [X] REJECTED: {result['reject_reason']}")
             return result
 
         if verbose:
-            print(f"      Step 6: Ranking {len(chain)} options by quality score...")
+            print(
+                f"      Step 6: Applying hard filters + ranking {len(chain)} options..."
+            )
 
-        # RANKING-BASED: Score ALL options, don't filter
+        # Hard-filter each contract, then rank the survivors
         all_options = []
+        reject_tally = {}
 
-        for i, (idx, opt) in enumerate(chain.iterrows()):
+        for i, (_idx, opt) in enumerate(chain.iterrows()):
             opt_analysis = self._analyze_option(opt, quote["price"], dte)
 
-            # Only include options with a valid bid (can't trade with $0 bid)
-            if opt_analysis["bid"] > 0:
+            reason = opt_analysis["hard_reject"]
+            if reason is None:
                 all_options.append(opt_analysis)
+            else:
+                reject_tally[reason] = reject_tally.get(reason, 0) + 1
 
             if verbose and i < 3:  # Show first 3 options
-                warnings_str = (
-                    f" [{', '.join(opt_analysis['warnings'])}]"
-                    if opt_analysis["warnings"]
-                    else ""
-                )
+                if reason:
+                    detail = f"HARD REJECT: {reason}"
+                elif opt_analysis["warnings"]:
+                    detail = f"Score={opt_analysis['quality_score']:.0f} [{', '.join(opt_analysis['warnings'])}]"
+                else:
+                    detail = f"Score={opt_analysis['quality_score']:.0f}"
                 print(
-                    f"         Option {i + 1}: ${opt_analysis['strike']} | Bid ${opt_analysis['bid']:.2f} | OI={opt_analysis['open_interest']} | Score={opt_analysis['quality_score']:.0f}{warnings_str}"
+                    f"         Option {i + 1}: ${opt_analysis['strike']} | Bid ${opt_analysis['bid']:.2f} | OI={opt_analysis['open_interest']} | {detail}"
                 )
 
         if verbose:
-            print(f"      -> Options with valid bid: {len(all_options)}")
+            print(
+                f"      -> Contracts passing hard filters: {len(all_options)}/{len(chain)}"
+            )
 
         if not all_options:
+            # Surface the dominant per-contract reject reason at the stock level
+            dominant = (
+                max(reject_tally, key=reject_tally.get) if reject_tally else "no data"
+            )
             result["status"] = "REJECTED"
-            result["reject_reason"] = "No options with valid bid price"
+            result["reject_reason"] = f"All contracts hard-rejected ({dominant})"
             if verbose:
                 print(f"      [X] REJECTED: {result['reject_reason']}")
             return result
@@ -470,13 +489,18 @@ class WheelScreener:
         """
         Analyze a single option contract.
 
+        PRODUCTION RULE — no fabricated data: missing bid/ask/delta means the
+        contract is hard-rejected, never approximated. Hard rejects also enforce
+        execution quality (OI, spread, premium floor) from WHEEL_CONFIG.
+
         Args:
             option: Option data from chain
             stock_price: Current stock price
             dte: Days to expiration for this contract (used to annualize the yield)
 
         Returns:
-            Option analysis dict
+            Option analysis dict. 'hard_reject' is None for tradeable contracts,
+            else a short reason string; rejected contracts carry zero scores.
         """
 
         # Helper to safely get value with fallback
@@ -487,29 +511,15 @@ class WheelScreener:
             return val
 
         strike = float(safe_get("strike_price", stock_price))
-
-        # Handle missing delta - use approximation based on strike/stock price ratio
-        delta = float(safe_get("delta", 0))
-        if delta == 0:  # If delta not available, approximate
-            # Simple approximation: closer to money = higher delta
-            moneyness = stock_price / strike if strike > 0 else 1.0
-            if moneyness > 1.1:  # ITM
-                delta = 0.8
-            elif moneyness > 0.9:  # ATM
-                delta = 0.5
-            else:  # OTM
-                delta = 0.2
-        delta = abs(delta)  # Convert to positive
-
-        # Handle missing bid/ask - use last_price as approximation
+        delta = abs(float(safe_get("delta", 0)))
         last_price = float(safe_get("last_price", 0))
-        bid = float(safe_get("bid", last_price * 0.98))  # Approximate if missing
-        ask = float(safe_get("ask", last_price * 1.02))  # Approximate if missing
-
+        bid = float(safe_get("bid", 0))
+        ask = float(safe_get("ask", 0))
         volume = int(safe_get("volume", 0))
         oi = int(safe_get("open_interest", 0))
 
-        # IV might be in different column names
+        # IV might be in different column names. Live sources deliver IV as a
+        # percentage (e.g. 35.2) — store as-is, do NOT rescale.
         iv = 0
         for iv_col in ["implied_volatility", "iv", "impliedVolatility"]:
             if iv_col in option.index:
@@ -518,15 +528,12 @@ class WheelScreener:
                     iv = float(iv_val)
                     break
 
-        # Calculate mid price and spread
-        mid = (bid + ask) / 2 if bid > 0 and ask > 0 else last_price
-        spread = ask - bid if bid > 0 and ask > 0 else abs(ask - bid)
-        spread_pct = spread / mid if mid > 0 else 0.05  # Default 5% if no spread data
+        mid = (bid + ask) / 2 if bid > 0 and ask > 0 else 0
+        spread = ask - bid if mid > 0 else 0
+        spread_pct = spread / mid if mid > 0 else 0
 
-        # Calculate return on capital
-        premium = (
-            bid if bid > 0 else last_price
-        )  # Use bid if available, otherwise last_price
+        # Premium is what the market pays you NOW: the bid.
+        premium = bid
         cash_required = strike * 100
         # Raw premium yield on strike (single-period, for display / cash-flow)
         return_pct = (premium / strike) * 100 if strike > 0 else 0
@@ -536,62 +543,26 @@ class WheelScreener:
         # return, and ignores assignment (delta already scores assignment risk separately).
         annualized_return_pct = return_pct * (365.0 / dte) if dte > 0 else 0
 
-        # RANKING-BASED APPROACH: Score everything, don't reject
-        # Calculate quality score for ALL options (higher = better)
+        # HARD REJECTS (execution quality — checked in escalating order)
+        hard_reject = None
+        if bid <= 0 or ask <= 0:
+            hard_reject = "no valid bid/ask"
+        elif delta == 0:
+            hard_reject = "missing delta (no Greeks)"
+        elif oi < self.config["open_interest_min"]:
+            hard_reject = f"OI {oi} < {self.config['open_interest_min']}"
+        elif spread_pct > self.config["bid_ask_spread_max_pct"]:
+            hard_reject = (
+                f"spread {spread_pct * 100:.0f}% > "
+                f"{self.config['bid_ask_spread_max_pct'] * 100:.0f}%"
+            )
+        elif return_pct < self.config["premium_pct_of_strike_min"] * 100:
+            hard_reject = (
+                f"premium {return_pct:.2f}% < "
+                f"{self.config['premium_pct_of_strike_min'] * 100:.1f}% floor"
+            )
 
-        # Premium score (0-40 points) - most important for wheel strategy.
-        # Scored on ANNUALIZED yield (~1 pt per 1% annualized, capped at 40 => 40%/yr)
-        # so a 30-DTE and a 45-DTE contract paying the same raw % are ranked correctly.
-        premium_score = min(annualized_return_pct, 40)
-
-        # Liquidity score (0-20 points)
-        liquidity_score = 0
-        if oi >= 100:
-            liquidity_score = 20
-        elif oi >= 50:
-            liquidity_score = 15
-        elif oi >= 10:
-            liquidity_score = 10
-        elif oi >= 1:
-            liquidity_score = 5
-        # Volume bonus
-        if volume >= 10:
-            liquidity_score = min(liquidity_score + 5, 20)
-
-        # Spread score (0-20 points) - tighter is better
-        if spread_pct <= 0.05:  # 5% or less
-            spread_score = 20
-        elif spread_pct <= 0.10:  # 10% or less
-            spread_score = 15
-        elif spread_pct <= 0.20:  # 20% or less
-            spread_score = 10
-        elif spread_pct <= 0.50:  # 50% or less
-            spread_score = 5
-        else:
-            spread_score = 0
-
-        # Delta score (0-10 points) - prefer 0.25-0.30 range
-        delta_score = 0
-        if 0.25 <= delta <= 0.30:
-            delta_score = 10  # Ideal range
-        elif 0.20 <= delta <= 0.35:
-            delta_score = 7  # Acceptable range
-        elif 0.15 <= delta <= 0.40:
-            delta_score = 4  # Edge of range
-
-        # Total option quality score (0-90)
-        quality_score = premium_score + liquidity_score + spread_score + delta_score
-
-        # Generate warnings (informational, not rejections)
-        warnings = []
-        if oi < 10:
-            warnings.append(f"low OI({oi})")
-        if spread_pct > 0.20:
-            warnings.append(f"wide spread({spread_pct * 100:.0f}%)")
-        if return_pct < 0.5:
-            warnings.append(f"low premium({return_pct:.1f}%)")
-
-        return {
+        result = {
             "code": option.get("code", ""),
             "strike": strike,
             "delta": delta,
@@ -607,14 +578,70 @@ class WheelScreener:
             "annualized_return_pct": round(annualized_return_pct, 2),
             "volume": volume,
             "open_interest": oi,
-            "iv": round(iv * 100, 1),
-            "quality_score": round(quality_score, 2),
-            "premium_score": round(premium_score, 1),
-            "liquidity_score": round(liquidity_score, 1),
-            "spread_score": round(spread_score, 1),
-            "delta_score": round(delta_score, 1),
-            "warnings": warnings,
+            "iv": round(iv, 1),
+            "hard_reject": hard_reject,
+            "quality_score": 0.0,
+            "premium_score": 0.0,
+            "liquidity_score": 0.0,
+            "spread_score": 0.0,
+            "delta_score": 0.0,
+            "warnings": [],
         }
+
+        if hard_reject:
+            return result
+
+        # SCORING (survivors only; higher = better)
+
+        # Premium score (0-40 points) - most important for wheel strategy.
+        # Scored on ANNUALIZED yield (~1 pt per 1% annualized, capped at 40 => 40%/yr)
+        # so a 30-DTE and a 45-DTE contract paying the same raw % are ranked correctly.
+        premium_score = min(annualized_return_pct, 40)
+
+        # Liquidity score (0-20 points); all survivors have OI >= 100
+        liquidity_score = 15
+        if oi >= 500:
+            liquidity_score = 20
+        # Volume bonus
+        if volume >= 10:
+            liquidity_score = min(liquidity_score + 5, 20)
+
+        # Spread score (0-20 points) - tighter is better; survivors are <= 10%
+        if spread_pct <= 0.05:  # 5% or less
+            spread_score = 20
+        else:
+            spread_score = 15
+
+        # Delta score (0-10 points) - prefer 0.25-0.30 range
+        delta_score = 0
+        if 0.25 <= delta <= 0.30:
+            delta_score = 10  # Ideal range
+        elif 0.20 <= delta <= 0.35:
+            delta_score = 7  # Acceptable range
+        elif 0.15 <= delta <= 0.40:
+            delta_score = 4  # Edge of range
+
+        # Total option quality score (0-90)
+        quality_score = premium_score + liquidity_score + spread_score + delta_score
+
+        # Warnings (informational, not rejections)
+        warnings = []
+        if volume == 0:
+            warnings.append("no volume today")
+        if spread_pct > 0.05:
+            warnings.append(f"spread {spread_pct * 100:.0f}%")
+
+        result.update(
+            {
+                "quality_score": round(quality_score, 2),
+                "premium_score": round(premium_score, 1),
+                "liquidity_score": round(liquidity_score, 1),
+                "spread_score": round(spread_score, 1),
+                "delta_score": round(delta_score, 1),
+                "warnings": warnings,
+            }
+        )
+        return result
 
     def _calculate_quality_score(self, result: Dict) -> float:
         """

@@ -29,7 +29,12 @@ FMP calls (well under the 250/day Starter cap); near-zero warm. Fully non-intera
   crypto/cyclical penalty (crypto-treasury proxies like MSTR are kept by choice; discretion at trade time).
 
 ## Screening (screener_wheel.py)
-- Wheel filters: delta 0.20–0.30 (from OPRA Greeks), DTE 30–45, IV percentile soft-filter, spread caps,
-  no earnings within DTE + buffer. IV rank and premium are SOFT (reduce score) — they rank, not reject.
+- HARD per-contract rejects (execution quality — never soften back to score-only): missing bid/ask
+  or delta (no fabrication/approximation, ever), OI < `open_interest_min` (100),
+  spread > `bid_ask_spread_max_pct` (10% of mid), premium < `premium_pct_of_strike_min` (0.5% of
+  strike). Plus delta 0.20–0.30 (from OPRA Greeks), DTE 30–45, no earnings within DTE + buffer
+  (fail-closed). IV rank and term structure are SOFT (reduce score) — they rank, not reject.
+- Chain `implied_volatility` is a PERCENTAGE everywhere (35.2 = 35.2% vol); `iv_history.json`
+  stores decimals. Never rescale by 100 in a consumer.
 - Candidates rank on annualized yield; keep `return_pct` (raw) and `annualized_return_pct` consistent
   across both scoring layers (option-level and stock-level quality score).

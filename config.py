@@ -68,18 +68,18 @@ WHEEL_CONFIG = {
     "price_min": 15.0,
     "price_max": 200.0,
     "market_cap_min_billions": 10,  # Pre-filtered in universe.py
-    # Options filters
-    "iv_rank_min": 30,  # RESTORED: Minimum IV Rank required
+    # Options filters — soft (score-only)
+    "iv_rank_min": 30,  # IV Rank below this reduces score, never rejects
     "iv_rank_preferred": 50,
     "delta_min": 0.20,
     "delta_max": 0.30,
     "dte_min": 30,
     "dte_max": 45,
-    "volume_min": 1,  # RELAXED: Minimum volume (OR logic with OI) - just needs SOME activity
-    "open_interest_min": 10,  # RELAXED: Minimum open interest - wheel positions are held to expiration anyway
-    "bid_ask_spread_max_pct": 0.50,  # TEMPORARILY RELAXED FOR DEBUGGING (50% of mid)
-    # Premium target
-    "premium_pct_of_strike_min": 0.001,  # TEMPORARILY RELAXED FOR DEBUGGING (0.1% minimum)
+    # Options filters — HARD rejects (execution quality; a fill you can't exit
+    # cheaply isn't income). Enforced per-contract in screener_wheel._analyze_option.
+    "open_interest_min": 100,  # HARD: reject contracts with OI below this
+    "bid_ask_spread_max_pct": 0.10,  # HARD: reject spreads wider than 10% of mid
+    "premium_pct_of_strike_min": 0.005,  # HARD: reject premiums under 0.5% of strike
     # Earnings buffer
     "earnings_buffer_days": 7,
     # Post-earnings IV-crush guard: selling premium just after a report means selling

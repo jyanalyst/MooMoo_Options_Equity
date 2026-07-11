@@ -17,11 +17,13 @@ Requires MooMoo OpenD running and logged in (127.0.0.1:11111) for options data.
 """
 
 import argparse
+import os
 import sys
 from datetime import datetime
 
 from data_fetcher import get_data_fetcher, MOOMOO_AVAILABLE, YFINANCE_AVAILABLE
 from config import MOOMOO_HOST, MOOMOO_PORT, WHEEL_CONFIG
+from iv_analyzer import IVAnalyzer
 from screener_wheel import WheelScreener
 from output_formatter import OutputFormatter
 
@@ -42,12 +44,23 @@ def print_banner():
     """)
 
 
+class _OfflineEarningsChecker:
+    """Earnings stub for --mock runs: no network, everything reported SAFE."""
+
+    def check_earnings_safe(self, ticker, expiration_date, **kwargs):
+        return (True, None, "SAFE - mock data (offline, not a real earnings check)")
+
+    def get_earnings_info(self, ticker, use_cache: bool = True):
+        return {"last_earnings": None, "next_earnings": None, "status": "found"}
+
+
 def run_wheel_scan(
     fetcher,
     max_capital: int = 8900,
     export_csv: bool = True,
     verbose: bool = True,
     allow_unverified: bool = None,
+    offline: bool = False,
 ):
     """
     Run Wheel Strategy screening.
@@ -58,6 +71,8 @@ def run_wheel_scan(
         export_csv: Export results to CSV
         verbose: Print verbose output
         allow_unverified: Allow stocks with unverified earnings dates
+        offline: Mock mode — stub the earnings checker and redirect IV files to
+            temp so the run makes zero network calls and no repo-root writes
 
     Returns:
         List of candidates
@@ -74,8 +89,25 @@ def run_wheel_scan(
         print("    [!] Allow Unverified: ON (manual earnings check required)")
     print(f"{'=' * 60}")
 
+    earnings_checker = None
+    iv_analyzer = None
+    if offline:
+        import tempfile
+
+        tmp = tempfile.mkdtemp(prefix="mock_scan_")
+        earnings_checker = _OfflineEarningsChecker()
+        iv_analyzer = IVAnalyzer(
+            fetcher,
+            cache_file=os.path.join(tmp, "iv_cache.json"),
+            history_file=os.path.join(tmp, "iv_history.json"),
+        )
+
     screener = WheelScreener(
-        fetcher, max_capital=max_capital, allow_unverified=allow_unverified
+        fetcher,
+        max_capital=max_capital,
+        allow_unverified=allow_unverified,
+        earnings_checker=earnings_checker,
+        iv_analyzer=iv_analyzer,
     )
 
     candidates = screener.screen_candidates(verbose=verbose)
@@ -231,6 +263,7 @@ def main():
             export_csv=export_csv,
             verbose=verbose,
             allow_unverified=args.allow_unverified,
+            offline=args.mock,
         )
 
         # Print summary
