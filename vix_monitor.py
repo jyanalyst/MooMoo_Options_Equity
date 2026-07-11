@@ -5,7 +5,8 @@ VIX Regime Monitor - CSV Logging Version
 Tracks VIX history and regime changes for trade journaling.
 Appends readings to monthly CSV files for historical analysis.
 
-Regimes (v3.1 — must match trade_journal.classify_vix_regime, the source of truth):
+Regimes (v3.1 — get_regime() here is the SINGLE source of truth;
+trade_journal.classify_vix_regime is a thin wrapper over it):
 - STOP (<14): No new trades - premium too low risk-adjusted
 - CAUTIOUS (14-18): Reduced deployment - 50% normal size
 - NORMAL (18-25): Standard deployment - 100% size
@@ -39,7 +40,7 @@ REPORTS_DIR = Path(__file__).parent / "reports" / "vix"
 # VIX thresholds
 VIX_THRESHOLDS = [14, 18, 25]
 
-# Regime definitions (v3.1 — must match trade_journal.classify_vix_regime)
+# Regime definitions (v3.1 — canonical; trade_journal wraps get_regime below)
 VIX_REGIMES = {
     "STOP": {
         "min": 0,
