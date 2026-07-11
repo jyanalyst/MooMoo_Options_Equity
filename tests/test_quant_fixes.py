@@ -310,7 +310,7 @@ def test_method_is_percentile_after_warmup(analyzer):
 # Optional Hypothesis property tests (skipped if hypothesis isn't installed)
 # --------------------------------------------------------------------------- #
 def test_hypothesis_properties(analyzer, screener):
-    hyp = pytest.importorskip("hypothesis")
+    pytest.importorskip("hypothesis")
     from hypothesis import given, strategies as st
 
     @given(

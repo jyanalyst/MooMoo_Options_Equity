@@ -445,9 +445,8 @@ def main():
         return
 
     # Run monitor
-    result = run_monitor(console_only=args.console)
+    run_monitor(console_only=args.console)
 
-    # Exit with appropriate code
     sys.exit(0)
 
 

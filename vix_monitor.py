@@ -29,6 +29,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Tuple
 
+from fmp_client import get_client
 
 # =============================================================================
 # CONFIGURATION

@@ -1306,7 +1306,6 @@ class TradeJournal:
                     bucket_wins = len(bucket_trades[bucket_trades["pnl"] > 0])
                     bucket_wr = bucket_wins / len(bucket_trades) * 100
                     bucket_pnl = bucket_trades["pnl"].sum()
-                    avg_iv_rank = bucket_trades["iv_rank"].mean()
 
                     # Warning for low IV Rank trades
                     warning = ""
@@ -1364,7 +1363,6 @@ class TradeJournal:
                     bucket_wins = len(bucket_trades[bucket_trades["pnl"] > 0])
                     bucket_wr = bucket_wins / len(bucket_trades) * 100
                     bucket_pnl = bucket_trades["pnl"].sum()
-                    avg_quality = bucket_trades["quality_score"].mean()
 
                     # Warning for low quality trades
                     warning = ""
